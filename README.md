@@ -445,3 +445,17 @@ Note: This project is unrelated to [hughperkins/pytorch](https://github.com/hugh
 ## License
 
 PyTorch has a BSD-style license, as found in the [LICENSE](LICENSE) file.
+
+
+## Use with Opencilk
+
+Currently the implementation that integrates opencilk overrides the OpenMP implementation, so that must be enabled (which it seems to be by default). In the future, opencilk should be integrated as a separate option (similar to IntelTBB and OpenMP) that can be toggled on/off within the library. The `test_parallel` test within the `aten` library was modified to add in some tests to ensure that the use of opencilk preserves correctness. Further tests should be added in the future.
+
+The commands used were as follows:
+
+1. `git clone https://github.com/ryandeng1/pytorch.git`
+2. `mkdir pytorch-build`
+3. `cd pytorch-build`
+4. `cmake -DCMAKE_C_COMPILER=PATH_TO_C_COMPILER -DCMAKE_CXX_COMPILER=PATH_TO_CMAKE_COMPILER -DBUILD_SHARED_LIBS:BOOL=ON -DCMAKE_BUILD_TYPE:STRING=Release -DPYTHON_EXECUTABLE:PATH=`which python3` -DBUILD_CUSTOM_PROTOBUF=ON -DCMAKE_INSTALL_PREFIX:PATH=INSTALL_PATH -DUSE_MPS=OFF -DBUILD_TEST=ON -DBUILD_TESTS=ON ../pytorch`
+5. `make`
+6. `make test`

@@ -2,6 +2,7 @@
 
 #include <c10/util/Exception.h>
 #include <c10/util/SmallVector.h>
+#include <ATen/ParallelReducer.h>
 
 namespace at {
 
@@ -28,6 +29,7 @@ inline void parallel_for(
     return;
   }
 
+  // TODO: Manually implement in grain_size, otherwise it might not be as efficient
   internal::invoke_parallel(begin, end, grain_size, f);
 #else
   internal::ThreadIdGuard tid_guard(0);
@@ -59,6 +61,11 @@ inline scalar_t parallel_reduce(
     return f(begin, end, ident);
   }
 
+  ParallelReducer<scalar_t, SF, F> reducer(ident, sf, f);
+  scalar_t final_result = reducer.reduce(begin, end);
+
+  // Original code in torch
+  /*
   c10::SmallVector<scalar_t, 64> results(max_threads, ident);
   internal::invoke_parallel(
       begin,
@@ -74,6 +81,9 @@ inline scalar_t parallel_reduce(
     result = sf(result, partial_result);
   }
   return result;
+  */
+  return final_result;
+
 #else
   internal::ThreadIdGuard tid_guard(0);
   return f(begin, end, ident);

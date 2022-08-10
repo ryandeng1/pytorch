@@ -25,11 +25,14 @@ int main() {
 
   at::set_num_threads(4);
   test(4);
+  // TODO: the commented code below, which composes std::thread with opencilk doesn't work
+  /*
   std::thread t1([](){
     at::init_num_threads();
     test(4);
   });
   t1.join();
+  */
 
   #if !AT_PARALLEL_NATIVE
   at::set_num_threads(5);

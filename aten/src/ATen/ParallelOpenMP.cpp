@@ -38,7 +38,8 @@ void init_num_threads() {
     // leaks in GCC 5.4)
     omp_set_num_threads(mkl_get_max_threads());
 #elif defined(_OPENMP)
-    omp_set_num_threads(intraop_default_num_threads());
+    // omp_set_num_threads(intraop_default_num_threads());
+    omp_set_num_threads(1);
 #endif
   }
 }
@@ -47,11 +48,10 @@ void set_num_threads(int nthreads) {
   TORCH_CHECK(nthreads > 0, "Expected positive number of threads");
   num_threads.store(nthreads);
 #ifdef _OPENMP
-  omp_set_num_threads(nthreads);
+  // omp_set_num_threads(nthreads);
 #endif
 #if AT_MKL_ENABLED()
   mkl_set_num_threads_local(nthreads);
-
   // because PyTorch uses OpenMP outside of MKL invocations
   // as well, we want this flag to be false, so that
   // threads aren't destroyed and recreated across every
@@ -77,7 +77,13 @@ void set_num_threads(int nthreads) {
 int get_num_threads() {
 #ifdef _OPENMP
   at::internal::lazy_init_num_threads();
-  return omp_get_max_threads();
+  auto nthreads = num_threads.load();
+  if (nthreads > 0) {
+      return nthreads;
+  } else {
+      return 1;
+  }
+  // return omp_get_max_threads();
 #else
   return 1;
 #endif
@@ -96,6 +102,7 @@ void set_thread_num(int id) {
 bool in_parallel_region() {
 #ifdef _OPENMP
   return omp_in_parallel();
+  // return false;
 #else
   return false;
 #endif

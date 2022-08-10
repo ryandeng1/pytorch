@@ -3,11 +3,13 @@
 #include <atomic>
 #include <cstddef>
 #include <exception>
+#include <iostream>
 
 #ifdef _OPENMP
 #define INTRA_OP_PARALLEL
 
 #include <omp.h>
+#include <cilk/cilk.h>
 #endif
 
 namespace at {
@@ -22,6 +24,15 @@ inline void invoke_parallel(
     const F& f) {
   std::atomic_flag err_flag = ATOMIC_FLAG_INIT;
   std::exception_ptr eptr;
+
+  cilk_for(int64_t i = begin; i < end; i++) {
+      f(i, i + 1);
+  }
+  return;
+
+
+  // Original code in OpenMP
+  /*
 
 #pragma omp parallel
   {
@@ -50,6 +61,7 @@ inline void invoke_parallel(
   if (eptr) {
     std::rethrow_exception(eptr);
   }
+*/
 }
 } // namespace internal
 #endif // _OPENMP

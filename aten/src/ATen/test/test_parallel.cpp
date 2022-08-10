@@ -8,6 +8,7 @@
 #include <iostream>
 // NOLINTNEXTLINE(modernize-deprecated-headers)
 #include <string.h>
+#include <sys/_types/_int64_t.h>
 #include <sstream>
 #if AT_MKL_ENABLED()
 #include <mkl.h>
@@ -88,6 +89,41 @@ TEST(TestParallel, NestedParallelThreadId) {
     ASSERT_EQ(num_threads, 1);
   });
 }
+
+TEST(TestParallel, ForAndReduce) {
+  NumThreadsGuard guard(1);
+  auto r = randint(0, 100000, {10000}).to(kLong);
+  auto serial_sum = r.square().sum();
+
+  NumThreadsGuard guard2(10);
+  auto parallel_sum = at::parallel_reduce(0, 10000, 1, int64_t(0), [&](int64_t begin, int64_t end, int ident) {
+    int64_t total = ident;
+    for (int64_t i = begin; i < end; i++) {
+        total += r[i].item<int64_t>() * r[i].item<int64_t>();
+    }
+    return total;
+  }, std::plus<>{});
+  ASSERT_EQ(serial_sum.item<int64_t>(), parallel_sum);
+}
+
+/*
+// TODO: Create a ReduceTensor test here
+TEST(TestParallel, ReduceTensor) {
+  NumThreadsGuard guard(1);
+  auto r = randint(0, 100000, {10000}).to(kLong);
+  auto serial_sum = r.square().sum();
+
+  NumThreadsGuard guard2(10);
+  auto parallel_sum = at::parallel_reduce(0, 10000, 1, int64_t(0), [&](int64_t begin, int64_t end, int ident) {
+    int64_t total = ident;
+    for (int64_t i = begin; i < end; i++) {
+        total += r[i].item<int64_t>() * r[i].item<int64_t>();
+    }
+    return total;
+  }, std::plus<>{});
+  ASSERT_EQ(serial_sum.item<int64_t>(), parallel_sum);
+}
+*/
 
 TEST(TestParallel, Exceptions) {
   // parallel case

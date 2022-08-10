@@ -32,6 +32,8 @@ set(CMAKE_INSTALL_MESSAGE NEVER)
 
 # check and set CMAKE_CXX_STANDARD
 string(FIND "${CMAKE_CXX_FLAGS}" "-std=c++" env_cxx_standard)
+# RYAN: Added opencilk here
+string(APPEND CMAKE_CXX_FLAGS " -fopencilk")
 if(env_cxx_standard GREATER -1)
   message(
       WARNING "C++ standard version definition detected in environment variable."

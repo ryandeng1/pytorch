@@ -157,3 +157,5 @@ TORCH_API int intraop_default_num_threads();
 #endif
 
 #include <ATen/Parallel-inl.h> // IWYU pragma: keep
+#include <ATen/ParallelReducer.h>
+
