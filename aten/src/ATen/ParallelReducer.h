@@ -65,8 +65,8 @@ void identity_(scalar_t ident, void* v) {
     *static_cast<scalar_t*>(v) = ident;
 }
 
-template <class scalar_t, class SF, class F>
-void reduce_(const SF& sf, const F& f, void* left, void* right) {
+template <class scalar_t, class SF>
+void reduce_(const SF& sf, void* left, void* right) {
     scalar_t tmp_left = *(static_cast<scalar_t*>(left));
     scalar_t tmp_right = *(static_cast<scalar_t*>(right));
     *(static_cast<scalar_t*>(left)) = sf(tmp_left, tmp_right);
@@ -80,7 +80,7 @@ public:
 
   scalar_t reduce(int64_t begin, int64_t end) {
       auto ident_func = std::bind(identity_<scalar_t>, ident, std::placeholders::_1);
-      auto reduce_func = std::bind(reduce_<scalar_t, SF, F>, sf, f, std::placeholders::_1, std::placeholders::_2);
+      auto reduce_func = std::bind(reduce_<scalar_t, SF>, sf, std::placeholders::_1, std::placeholders::_2);
       auto wrapped_ident_func = Wrapper<0, void(void*)>::wrap(ident_func);
       auto wrapped_reduce_func = Wrapper<1, void(void*, void*)>::wrap(reduce_func);
       scalar_t cilk_reducer(wrapped_ident_func, wrapped_reduce_func) res = ident;
