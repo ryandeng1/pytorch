@@ -39,7 +39,8 @@ void init_num_threads() {
     omp_set_num_threads(mkl_get_max_threads());
 #elif defined(_OPENMP)
     // omp_set_num_threads(intraop_default_num_threads());
-    omp_set_num_threads(1);
+    // omp_set_num_threads(1);
+    set_num_threads(__cilkrts_get_nworkers());
 #endif
   }
 }
@@ -76,13 +77,14 @@ void set_num_threads(int nthreads) {
 // consistent size of parallel region in different threads
 int get_num_threads() {
 #ifdef _OPENMP
-  at::internal::lazy_init_num_threads();
+  // at::internal::lazy_init_num_threads();
   auto nthreads = num_threads.load();
   if (nthreads > 0) {
       return nthreads;
   } else {
       return 1;
   }
+  // return __cilkrts_get_nworkers();
   // return omp_get_max_threads();
 #else
   return 1;
@@ -101,8 +103,8 @@ void set_thread_num(int id) {
 
 bool in_parallel_region() {
 #ifdef _OPENMP
-  return omp_in_parallel();
-  // return false;
+  // return omp_in_parallel();
+  return false;
 #else
   return false;
 #endif
