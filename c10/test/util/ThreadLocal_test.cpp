@@ -1,5 +1,8 @@
 #include <c10/util/ThreadLocal.h>
 #include <gtest/gtest.h>
+#include <cilk/cilk.h>
+#include <cilk/cilk_api.h>
+#include <iostream>
 
 #include <atomic>
 #include <thread>
@@ -62,6 +65,28 @@ TEST(ThreadLocalTest, TestInnerScopeWithTwoVars) {
   }
 
   EXPECT_EQ(*str, "");
+}
+
+TEST(ThreadLocalTest, TestCilk) {
+  C10_DEFINE_TLS_static(std::string, str);
+  *str = "abc";
+
+  // std::cout << "Cilk num workers: " << __cilkrts_get_nworkers() << std::endl;
+  auto l = [](){
+      *str = "ryan";
+      EXPECT_EQ(*str, "ryan");
+  };
+
+  auto r = [](){
+      *str = "bob";
+      EXPECT_EQ(*str, "bob");
+  };
+
+  cilk_spawn l;
+  cilk_spawn r;
+
+  EXPECT_EQ(*str, "abc");
+  cilk_sync;
 }
 
 struct Foo {

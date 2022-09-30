@@ -10,12 +10,21 @@
 
 #include <omp.h>
 #include <cilk/cilk.h>
+#include <cilk/cilk_api.h>
+#include <cstdlib>
 #endif
+
+static void ryan_for() {
+    if (std::rand() == 10) {
+        std::cout << "RYAN FOR LOOP" << std::endl;
+    }
+}
 
 namespace at {
 
 #ifdef _OPENMP
 namespace internal {
+
 template <typename F>
 inline void invoke_parallel(
     int64_t begin,
@@ -25,15 +34,66 @@ inline void invoke_parallel(
   std::atomic_flag err_flag = ATOMIC_FLAG_INIT;
   std::exception_ptr eptr;
 
+  /*
   cilk_for(int64_t i = begin; i < end; i++) {
       f(i, i + 1);
   }
-  return;
+  */
+  int64_t x = 0;
 
+  cilk_spawn [&](){
+    for (int i = begin; i < end; i++) {
+        x += std::rand();
+    }
+    return;
+    }();
+  ryan_for();
+  
+
+  /*
+  int64_t num_threads = __cilkrts_get_nworkers();
+  // sometimes (during testing?) grain size can be 0
+  if (grain_size > 0) {
+      num_threads = std::min(num_threads, divup((end - begin), grain_size));
+  }
+
+  int64_t chunk_size = divup((end - begin), num_threads);
+
+  for(int64_t i = begin; i < end; i += chunk_size) {
+      f(i, std::min(end, i + chunk_size));
+  }
+  */
+  if (grain_size == 0) {
+      grain_size = 1;
+  }
+
+  int y = __cilkrts_get_worker_number();
+
+  for (int64_t i = begin; i < end; i += grain_size) {
+      f(i, std::min(end, i + grain_size));
+  }
+
+  cilk_spawn [&](){
+    for (int i = begin; i < end; i++) {
+        x += std::rand();
+    }
+    return;
+    }();
+  cilk_spawn [&](){
+    for (int i = begin; i < end; i++) {
+        x += std::rand();
+    }
+    return;
+    }();
+  cilk_sync;
+
+  if (x == 3) {
+    std::cout << "X: " << x << std::endl;
+  }
 
   // Original code in OpenMP
-  /*
 
+/*
 #pragma omp parallel
   {
     // choose number of tasks based on grain size and number of threads

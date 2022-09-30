@@ -13,6 +13,7 @@
 
 #ifdef _OPENMP
 #include <omp.h>
+#include <cilk/cilk_api.h>
 #endif
 
 namespace at {
@@ -98,12 +99,15 @@ int intraop_default_num_threads() {
   // call this API for mobile.
   TORCH_CHECK(false, "Undefined intraop_default_num_threads on mobile.");
 #else
+  /*
   size_t nthreads = get_env_num_threads("OMP_NUM_THREADS", 0);
   nthreads = get_env_num_threads("MKL_NUM_THREADS", nthreads);
   if (nthreads == 0) {
     nthreads = TaskThreadPoolBase::defaultNumThreads();
   }
   return nthreads;
+  */
+  return __cilkrts_get_nworkers();
 #endif
 }
 
