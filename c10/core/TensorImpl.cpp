@@ -10,6 +10,21 @@
 #include <c10/util/Optional.h>
 #include <c10/util/irange.h>
 
+/*
+#ifdef __cilksan__
+#ifdef __cplusplus
+extern "C" {
+#endif
+void __csan_default_libhook(uint64_t call_id, uint64_t func_id, unsigned count);
+void __csan_free(uint64_t call_id, uint64_t func_id, unsigned count) {
+  __csan_default_libhook(call_id, func_id, count);
+}
+#ifdef __cplusplus
+}
+#endif
+#endif
+*/
+
 C10_DEFINE_bool(
     caffe2_keep_on_shrink,
     true,

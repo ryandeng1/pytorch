@@ -8,6 +8,7 @@
 #include <c10/util/irange.h>
 
 namespace at {
+/*
 #ifdef __cilksan__
 #ifdef __cplusplus
 extern "C" {
@@ -20,6 +21,7 @@ void __csan_free(uint64_t call_id, uint64_t func_id, unsigned count) {
 }
 #endif
 #endif
+*/
 
 // Given a linear index, return the actual index.
 // Example: Given linear_idx = 3, sizes = [5, 2], we would return [1, 0]

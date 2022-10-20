@@ -10,6 +10,7 @@ TEST(TempFileTest, MatchesExpectedPattern) {
 }
 #endif // !defined(_WIN32)
 
+/*
 #ifdef __cilksan__
 #ifdef __cplusplus
 extern "C" {
@@ -22,6 +23,7 @@ void __csan_rmdir(uint64_t call_id, uint64_t func_id, unsigned count) {
 }
 #endif
 #endif
+*/
 
 static bool directory_exists(const char* path) {
   struct stat st;
