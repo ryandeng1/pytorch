@@ -45,6 +45,10 @@
 #include <unordered_set>
 #include <cilk/cilk_api.h>
 
+static void ryan_error() {
+    std::cout << "Ryan error" << std::endl;
+}
+
 namespace torch {
 namespace autograd {
 
@@ -89,7 +93,7 @@ static thread_local int worker_device = NO_DEVICE;
 // This variable is true if ALL invocations in the stack of re-entrant engine
 // invocations are imperative backwards. This special variable is needed for the
 // gradient checkpointing feature only.
-static thread_local bool checkpoint_valid = true;
+static thread_local bool checkpoint_valid = false;
 
 // Number of nested reentrant backwards calls currently on this thread
 static thread_local int current_depth = 0;
@@ -209,10 +213,6 @@ CheckpointValidGuard::~CheckpointValidGuard() {
   checkpoint_valid = prev_checkpoint_valid_state;
 }
 
-void ryan() {
-    std::cout << "RYAN" << std::endl;
-}
-
 auto ReadyQueue::push(NodeTask item, bool incrementOutstandingTasks) -> void {
   {
     // Lock mutex for writing to heap_
@@ -221,6 +221,9 @@ auto ReadyQueue::push(NodeTask item, bool incrementOutstandingTasks) -> void {
       std::shared_ptr<GraphTask> graph_task = item.base_.lock();
       TORCH_INTERNAL_ASSERT(graph_task, "GraphTask is no longer valid!");
       ++graph_task->outstanding_tasks_;
+      // std::cout << "graph task outstanding tasks: " << graph_task->outstanding_tasks_.load() << " queue size: " << heap_.size() + 1 << " for queue: " << this << " for cilk worker: " << __cilkrts_get_worker_number() << std::endl;
+    } else {
+      std::cout << "Why am I not incrementing" << std::endl;
     }
     heap_.push(std::move(item));
   }
@@ -370,6 +373,7 @@ void Engine::thread_init(
 }
 
 GraphTaskGuard::GraphTaskGuard(std::shared_ptr<GraphTask> graph_task) {
+  TORCH_INTERNAL_ASSERT(false);
   last_graph_task_ = std::move(current_graph_task);
   current_graph_task = std::move(graph_task);
 }
@@ -385,18 +389,38 @@ void GraphTaskGuard::restore_current_graph_task() {
 // during node evaluation, see `Node.task_should_compute_output()` function.
 const std::unordered_map<Node*, GraphTask::ExecInfo>*
 get_current_graph_task_exec_info() {
+  TORCH_INTERNAL_ASSERT(false);
+  if (current_graph_task) {
+      TORCH_INTERNAL_ASSERT(false);
+      return nullptr;
+  }
   return current_graph_task ? &current_graph_task->exec_info_ : nullptr;
 }
 
 const std::unordered_set<Node*>* get_current_graph_task_nodes_in_graph() {
+  TORCH_INTERNAL_ASSERT(false);
+  if (current_graph_task) {
+      TORCH_INTERNAL_ASSERT(false);
+      return nullptr;
+  }
   return current_graph_task ? &current_graph_task->nodes_in_graph_ : nullptr;
 }
 
 bool get_current_graph_task_keep_graph() {
+  TORCH_INTERNAL_ASSERT(false);
+  if (current_graph_task) {
+      TORCH_INTERNAL_ASSERT(false);
+      return true;
+  }
+  return false;
   return current_graph_task ? current_graph_task->keep_graph_ : true;
 }
 
 void add_node_to_current_graph_task_exec_info(Node* fn) {
+  TORCH_INTERNAL_ASSERT(false);
+  if (current_graph_task) {
+      TORCH_INTERNAL_ASSERT(false);
+  }
   current_graph_task->exec_info_[fn].needed_ = true;
 }
 
@@ -441,7 +465,7 @@ auto Engine::thread_main(const std::shared_ptr<GraphTask>& graph_task) -> void {
   // thread_main
   TORCH_INTERNAL_ASSERT(local_ready_queue != nullptr);
   int start_worker = __cilkrts_get_worker_number();
-  // std::shared_ptr<GraphTask> tmp_graph_task = graph_task;
+  std::string name = "ryan";
   while (graph_task == nullptr || !graph_task->future_result_->completed()) {
     // local_graph_task represents the graph_task we retrieve from the queue.
     // The outer graph_task represents the overall graph_task we need to execute
@@ -453,8 +477,13 @@ auto Engine::thread_main(const std::shared_ptr<GraphTask>& graph_task) -> void {
       // as part of inputs_).
       //
       // NodeTask task = local_ready_queue->pop();
+      // NodeTask task = graph_task->cpu_ready_queue_->pop();
       NodeTask task = graph_task->cpu_ready_queue_->pop();
-      // NodeTask task = tmp_graph_task->cpu_ready_queue_->pop();
+      // std::cout << "popped task: " << task.fn_->name() << " off of queue" << " by cilk worker: " << __cilkrts_get_worker_number() << " off of queue: " << graph_task->cpu_ready_queue_ << std::endl;
+      if (task.fn_->name().compare("torch::autograd::AccumulateGrad") != 0) {
+        name = task.fn_->name();
+      }
+    
 
       // This will only work if the worker is running a non backward task
       // TODO Needs to be fixed this to work in all cases
@@ -464,27 +493,33 @@ auto Engine::thread_main(const std::shared_ptr<GraphTask>& graph_task) -> void {
       }
 
       if (!(local_graph_task = task.base_.lock())) {
+        std::cout << "RYAN skipping some execution????" << std::endl;
         // GraphTask for function is no longer valid, skipping further
         // execution.
-        std::cout << "RYAN bad new" << std::endl;
         continue;
       }
 
-      // tmp_graph_task = local_graph_task;
 
       if (local_graph_task.get() != graph_task.get()) {
-          ryan();
           std::cout << "RYAN BRUH HUH HERE MAN. " << __cilkrts_get_worker_number() << std::endl;
           std::cout << "Local graph task: " << local_graph_task << " Graph task: " << graph_task << std::endl;
           std::cout << "Graph task cpu ready queue: " << graph_task->cpu_ready_queue_ << " local graph task cpu ready queue: " << local_graph_task->cpu_ready_queue_ << std::endl;
           std::cout << "local ready queue: " << local_ready_queue << std::endl;
       }
 
+      bool prev_grad_mode = GradMode::is_enabled();
+      TORCH_INTERNAL_ASSERT(prev_grad_mode);
+      int start;
       if (task.fn_ && !local_graph_task->has_error_.load()) {
         // Set the ThreadLocalState before calling the function.
         // NB: The ThreadLocalStateGuard doesn't set the grad_mode because
         // GraphTask always saves ThreadLocalState without grad_mode.
-        at::ThreadLocalStateGuard tls_guard(local_graph_task->thread_locals_);
+        
+        // std::cout << "cilk worker: " << __cilkrts_get_worker_number() << " grad mode before: " << GradMode::is_enabled() << " for graph task: " << local_graph_task << std::endl;
+        // at::ThreadLocalStateGuard tls_guard(local_graph_task->thread_locals_);
+        GradMode::set_enabled(false);
+        // std::cout << "grad mode: " << GradMode::is_enabled() << " for cilk worker: " << __cilkrts_get_worker_number() << " working on graph task: " << local_graph_task << std::endl;
+        // std::cout << "cilk worker: " << __cilkrts_get_worker_number() << " grad mode after: " << GradMode::is_enabled() << " for graph task: " << local_graph_task << std::endl;
         c10::Warning::WarningHandlerGuard warnings_guard(
             &local_graph_task->warning_handler_);
 
@@ -493,10 +528,10 @@ auto Engine::thread_main(const std::shared_ptr<GraphTask>& graph_task) -> void {
           // and restores it on exit. The current_graph_task variable helps
           // queue_callback() to find the target GraphTask to append final
           // callbacks.
-          GraphTaskGuard guard(local_graph_task);
-          NodeGuard ndguard(task.fn_);
+          // GraphTaskGuard guard(local_graph_task);
+          // NodeGuard ndguard(task.fn_);
           if (AnomalyMode::is_enabled()) {
-              std::cout << "Anomaly mode enabled" << std::endl;
+              TORCH_INTERNAL_ASSERT(false);
           }
           {
             RECORD_FUNCTION(
@@ -511,30 +546,34 @@ auto Engine::thread_main(const std::shared_ptr<GraphTask>& graph_task) -> void {
                 local_graph_task->cpu_ready_queue_);
           }
         } catch (std::exception& e) {
+          std::cout << "EXCEPTION for cilk worker: " << __cilkrts_get_worker_number() << " : " << e.what() << std::endl;
           thread_on_exception(local_graph_task, task.fn_, e);
         }
+        start = __cilkrts_get_worker_number();
+        // std::cout << "grad mode after: " << GradMode::is_enabled() << " for cilk worker: " << __cilkrts_get_worker_number() << " working on graph task: " << local_graph_task << std::endl;
+      } else {
+          TORCH_INTERNAL_ASSERT(false);
       }
+      if (start != __cilkrts_get_worker_number()) {
+          TORCH_INTERNAL_ASSERT(false);
+      }
+      TORCH_INTERNAL_ASSERT(prev_grad_mode);
+      GradMode::set_enabled(prev_grad_mode);
     }
+      if (local_graph_task.get() != graph_task.get()) {
+          std::cout << "RYAN BRUH HUH HERE MAN 2. " << __cilkrts_get_worker_number() << std::endl;
+          std::cout << "Local graph task: " << local_graph_task << " Graph task: " << graph_task << std::endl;
+          std::cout << "Graph task cpu ready queue: " << graph_task->cpu_ready_queue_ << " local graph task cpu ready queue: " << local_graph_task->cpu_ready_queue_ << std::endl;
+          std::cout << "local ready queue: " << local_ready_queue << std::endl;
+      }
 
     // Decrement the outstanding tasks.
     --local_graph_task->outstanding_tasks_;
-
+    // std::cout << "graph task outstanding tasks: " << graph_task->outstanding_tasks_.load() << " queue size: " << graph_task->cpu_ready_queue_->size() << " for queue: " << graph_task->cpu_ready_queue_ << " for cilk worker: " << __cilkrts_get_worker_number() << std::endl;
+ 
     // Check if we've completed execution.
     if (local_graph_task->completed()) {
-      if (false) {
-          // ryan();
-          std::cout << "YO WORK STEALING happened. " << std::endl;
-          std::cout << "Local graph task completed" << " for local ready queue: " << local_ready_queue << " for cilk worker: " << __cilkrts_get_worker_number() << std::endl;
-          std::cout << "Graph task: " << graph_task << " cilk worker: " << __cilkrts_get_worker_number() << std::endl;
-          std::cout << "Local Graph task num tasks left: " << local_graph_task->outstanding_tasks_.load() << std::endl;
-          if (graph_task) {
-            std::cout << "END Graph task completed?: " << graph_task->future_result_->completed() << std::endl;
-            std::cout << "END Graph task outstanding tasks?: " << graph_task->outstanding_tasks_.load() << std::endl;
-            std::cout << "END Graph task ready queue: " << (graph_task->cpu_ready_queue_) << std::endl;
-            std::cout << "Num left in cpu ready queue: " << graph_task->cpu_ready_queue_->size() << std::endl;
-            std::cout << "Num left in local ready queue: " << local_ready_queue->size() << std::endl;
-          }
-      }
+      std::cout << "Last task name: " << name << " for cilk worker: " << __cilkrts_get_worker_number() << std::endl;
       local_graph_task->mark_as_completed_and_run_post_processing();
 
       auto base_owner = local_graph_task->owner_;
@@ -566,12 +605,9 @@ auto Engine::thread_main(const std::shared_ptr<GraphTask>& graph_task) -> void {
       }
     }
   }
-  /*
-  if (graph_task == nullptr) {
-      std::cout << "RYAN NULL PTR?" << std::endl;
-  }
-  std::cout << "Thread main completed" << " for cilk worker: " << __cilkrts_get_worker_number() << " and graph task queue: " << graph_task->cpu_ready_queue_ << std::endl;
-  */
+  std::cout << "Thread main completed" << " for cilk worker: " << __cilkrts_get_worker_number() << " and graph task queue: " << graph_task->cpu_ready_queue_ << " with size: " << graph_task->cpu_ready_queue_->size() << " and local ready queue: " << local_ready_queue << " and name: " << name << " num outstanding tasks: " << graph_task->outstanding_tasks_ << std::endl;
+  std::cout << "graph taks completed? " << graph_task->completed() << std::endl;
+  std::cout << "graph task future result completed? " << graph_task->future_result_->completed() << std::endl;
 }
 
 // Reentrant call will re-use the graph_task's owner thread ready_queue for
@@ -580,8 +616,8 @@ auto Engine::thread_main(const std::shared_ptr<GraphTask>& graph_task) -> void {
 // thread, but sharing the same cpu_ready_queue with parent thread is a
 // performance improvement and cuda thread still have to do the same thing.
 void Engine::reentrant_thread_init() {
+  TORCH_INTERNAL_ASSERT(false);
   at::init_num_threads();
-  std::cout << "Reentrant thread init" << std::endl;
   auto tp_shared = thread_pool_shared_;
   while (true) {
     std::unique_lock<std::mutex> lk(tp_shared->mutex_);
@@ -603,7 +639,6 @@ void Engine::reentrant_thread_init() {
     local_ready_queue =
         ready_queue_by_index(graph_task->cpu_ready_queue_, graph_task->owner_);
     total_depth = graph_task->reentrant_depth_;
-    std::cout << "Reentrant thread init" << std::endl;
     thread_main(graph_task);
   }
 }
@@ -616,8 +651,12 @@ void Engine::thread_on_exception(
 }
 
 bool GraphTask::completed() {
-  return outstanding_tasks_.load() == 0 ||
+  auto res = outstanding_tasks_.load() == 0 ||
       (exit_on_error_ && has_error_.load());
+  if (res && outstanding_tasks_.load() != 0) {
+      std::cout << "RYAN EXIT ON ERROR" << std::endl;
+  }
+  return res;
 }
 
 void GraphTask::mark_as_completed_and_run_post_processing() {
@@ -638,7 +677,7 @@ void GraphTask::mark_as_completed_and_run_post_processing() {
 
     exec_post_processing();
     if (captured_vars_.size() == 0) {
-        std::cout << "RYAN MAN SOMETHING WENT WRONG" << std::endl;
+        std::cout << "RYAN captured vars size 0" << std::endl;
     }
     std::vector<Variable> vars = std::move(captured_vars_);
 
@@ -660,7 +699,7 @@ void GraphTask::exec_post_processing() {
   // set the thread_local current_graph_task_ as more callbacks can be installed
   // by existing final callbacks.
   //
-  GraphTaskGuard guard(shared_from_this());
+  // GraphTaskGuard guard(shared_from_this());
 
   // Lock mutex during each iteration for accessing final_callbacks.size()
   // Unlocking is necessary, because the callback can register
@@ -675,6 +714,7 @@ void GraphTask::exec_post_processing() {
   // Syncs caller_current_stream with leaf streams, so final_callbacks may use
   // any grad on its device's current stream.
   if (leaf_streams.size() > 0) {
+    TORCH_INTERNAL_ASSERT(false);
     for (const auto& leaf_stream : leaf_streams) {
       // stash_current_streams() stashed streams for all device IDs that already
       // had a CUDA context before the GraphTask executed. For inactive devices,
@@ -715,12 +755,15 @@ void GraphTask::exec_post_processing() {
     // Set the ThreadLocalState before calling the function.
     // NB: The ThreadLocalStateGuard doesn't set the grad_mode because GraphTask
     // always saves ThreadLocalState without grad_mode.
-    at::ThreadLocalStateGuard tls_guard(this->thread_locals_);
+    // std::cout << "cilk worker: " << __cilkrts_get_worker_number() << " grad mode before: " << this->thread_locals_.get_grad_mode() << std::endl;
+    // at::ThreadLocalStateGuard tls_guard(this->thread_locals_);
+    // std::cout << "cilk worker: " << __cilkrts_get_worker_number() << " grad mode after: " << this->thread_locals_.get_grad_mode() << std::endl;
 
     // WARNING: Don't use a range-for loop here because more callbacks may be
     // added in between callback calls, so iterators may become invalidated.
     // NOLINTNEXTLINE(modernize-loop-convert)
     for (size_t i = 0; i < final_callbacks_.size(); ++i) {
+      TORCH_INTERNAL_ASSERT(false);
       cb_lock.unlock();
       final_callbacks_[i]();
       cb_lock.lock();
@@ -739,6 +782,9 @@ void GraphTask::set_exception_without_signal(const std::shared_ptr<Node>& fn) {
 void GraphTask::set_exception(
     std::exception_ptr eptr,
     const std::shared_ptr<Node>& fn) {
+  ryan_error();
+  std::cout << "EXCEPTION: " << " for cilk worker: " << __cilkrts_get_worker_number() << std::endl;
+  std::rethrow_exception(eptr);
   set_exception_without_signal(fn);
   if (!future_completed_.exchange(true)) {
     // NOLINTNEXTLINE(performance-move-const-arg)
@@ -748,6 +794,7 @@ void GraphTask::set_exception(
 
 static variable_list call_pre_hooks(Node& fn, variable_list inputs) {
   for (const auto& hook : fn.pre_hooks()) {
+    TORCH_INTERNAL_ASSERT(false);
     inputs = (*hook)(inputs);
   }
   return inputs;
@@ -758,6 +805,7 @@ static variable_list call_post_hooks(
     variable_list outputs,
     const variable_list& inputs) {
   for (const auto& hook : fn.post_hooks()) {
+    TORCH_INTERNAL_ASSERT(false);
     outputs = (*hook)(outputs, inputs);
   }
   return outputs;
@@ -784,6 +832,10 @@ void set_device(int device) {
   worker_device = device;
 }
 
+void ryan_undefined() {
+    std::cout << "RYAN Undefined grad" << std::endl;
+}
+
 void validate_outputs(
     const edge_list& edges,
     variable_list& grads,
@@ -802,7 +854,12 @@ void validate_outputs(
     const auto& metadata = edge.function->input_metadata(edge.input_nr);
     auto& grad = grads[i];
     if (!grad.defined()) {
-      std::cout << "RYAN HELLO SOME BULSHIT" << std::endl;
+      std::cout << "Grad: " << grad << std::endl;
+      /*
+      std::cout << "RYAN HELLO SOME BULLSHIT" << std::endl;
+      std::cout << "Edge function name: " << edge.function->name() << std::endl;
+      ryan_undefined();
+      */
       // FIXME: TestJit.test_ge_optimized fails this assertion.
       // std::stringstream ss;
       // ss << "undefined gradient at index " << i;
@@ -912,6 +969,22 @@ static variable_list call_function(
     outputs = fn(std::move(inputs_copy));
   } else {
     outputs = fn(std::move(inputs));
+    auto fn_name = fn.name();
+    /*
+    // std::cout << "call function name: " << fn_name << " by cilk worker: " << __cilkrts_get_worker_number() << std::endl;
+    if (fn_name.compare("torch::autograd::CopySlices") == 0) {
+        const auto exec_info = &graph_task->exec_info_;
+        if (exec_info && !exec_info->empty()) {
+            for (const auto& next : fn.next_edges()) {
+                if (next.is_valid()) {
+                    // add_node_to_current_graph_task_exec_info(next.function.get());
+                    graph_task->exec_info_[&fn].needed_ = true;
+                    std::cout << "fn needed is true: " << fn_name << std::endl;
+                }
+            }
+        }
+    }
+    */
   }
 
   validate_outputs(fn.next_edges(), outputs, [&](const std::string& msg) {
@@ -921,6 +994,7 @@ static variable_list call_function(
   });
 
   if (has_post_hooks) {
+    TORCH_INTERNAL_ASSERT(false);
     // NOLINTNEXTLINE(bugprone-use-after-move)
     return call_post_hooks(fn, std::move(outputs), inputs);
   }
@@ -950,6 +1024,7 @@ void Engine::evaluate_function(
         auto& captured_grad = graph_task->captured_vars_[capture.output_idx_];
         captured_grad = inputs[capture.input_idx_];
         for (auto& hook : capture.hooks_) {
+          std::cout << "HOOK" << std::endl;
           captured_grad = (*hook)(captured_grad);
         }
         if (opt_parent_stream) {
@@ -959,6 +1034,7 @@ void Engine::evaluate_function(
       }
     }
     if (!fn_info.needed_) {
+      std::cout << "not needed: " << func->name() << std::endl;
       // Skip execution if we don't need to execute the function.
       return;
     }
@@ -1123,8 +1199,6 @@ auto Engine::execute(
     bool accumulate_grad,
     const edge_list& outputs) -> variable_list {
   // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
-
-  // std::cout << "Execute for cilk worker: " << __cilkrts_get_worker_number() << " local ready queue: " << local_ready_queue << std::endl;
   int start_worker = __cilkrts_get_worker_number();
   validate_outputs(
       roots, const_cast<variable_list&>(inputs), [](const std::string& msg) {
@@ -1156,7 +1230,6 @@ auto Engine::execute(
   if (!not_reentrant_backward_call) {
       std::cout << "RYAN REENTRANT BACKWARDS CALL" << std::endl;
   }
-
   
   auto new_ready_queue = std::make_shared<ReadyQueue>();
   auto graph_task = std::make_shared<GraphTask>(
@@ -1165,6 +1238,7 @@ auto Engine::execute(
       /* depth */ not_reentrant_backward_call ? 0 : total_depth + 1,
       new_ready_queue);
       // /* cpu_ready_queue */ local_ready_queue);
+  std::cout << "Execute for cilk worker: " << __cilkrts_get_worker_number() << " queue: " << new_ready_queue << " and graph task: " << graph_task << " grad mode: " << GradMode::is_enabled() << std::endl;
 
   // std::cout << "Graph task: " << graph_task << " for cilk worker: " << __cilkrts_get_worker_number() << " with queue: " << new_ready_queue << std::endl;
   // If we receive a single root, skip creating extra root node
@@ -1235,6 +1309,9 @@ c10::intrusive_ptr<at::ivalue::Future> Engine::execute_with_graph_task(
   //
   // hack for thread_local
   if (worker_device == NO_DEVICE || true) {
+    if (worker_device != NO_DEVICE) {
+        std::cout << "Some worker device bs for cilk worker: " << __cilkrts_get_worker_number() << std::endl;
+    }
     // We set the worker_device to CPU_DEVICE only if worker_device was
     // previously NO_DEVICE. Setting it to CPU afterwards allow us to detect
     // whether this is a re-entrant call or not.
@@ -1246,6 +1323,7 @@ c10::intrusive_ptr<at::ivalue::Future> Engine::execute_with_graph_task(
     // Now that all the non-thread safe fields of the graph_task have been
     // populated, we can enqueue it.
 
+    auto name = graph_root->name();
     queue->push(
         NodeTask(graph_task, std::move(graph_root), std::move(input_buffer)));
 
@@ -1255,15 +1333,27 @@ c10::intrusive_ptr<at::ivalue::Future> Engine::execute_with_graph_task(
 
     thread_main(graph_task);
     TORCH_INTERNAL_ASSERT(graph_task->future_result_->completed());
-    TORCH_INTERNAL_ASSERT(graph_task->cpu_ready_queue_->size() == 0);
+    if (graph_task->cpu_ready_queue_->size() != 0) {
+        // ryan_error();
+        std::cout << "RYAN: READY QUEUE SIZE: " << graph_task->cpu_ready_queue_->size() << " for queue: " << graph_task->cpu_ready_queue_ << " for cilk worker: " << __cilkrts_get_worker_number() << " for graph task: " << graph_task << std::endl;
+        std::cout << "Error on function: " << name << std::endl;
+
+        int size = graph_task->cpu_ready_queue_->size();
+        for (int i = 0; i < size; i++) {
+            NodeTask task = graph_task->cpu_ready_queue_->pop();
+            std::cout << "WHAT IS LEFT? " << task.fn_->name() << std::endl;
+        }
+
+        TORCH_INTERNAL_ASSERT(false);
+    }
+    // TORCH_INTERNAL_ASSERT(graph_task->cpu_ready_queue_->size() == 0);
     // reset the worker_device after the completion of the graph_task, this is
     // so that the initial state of the engine remains the same across every
     // backward() or grad() call, we don't need to reset local_ready_queue as we
     // could possibly reuse it for new backward calls.
     worker_device = NO_DEVICE;
   } else {
-    std::cout << "RYAN Worker device is: " << worker_device << " either I fucked up or this is some kind of re-entrant backwards call" << std::endl;
-    std::cout << "Something is wrong with cilk worker: " << __cilkrts_get_worker_number() << std::endl;
+    TORCH_INTERNAL_ASSERT(false);
     // If worker_device is any devices (i.e. CPU, CUDA): this is a re-entrant
     //    backward call from that device.
     graph_task->owner_ = worker_device;
@@ -1322,6 +1412,7 @@ Engine& Engine::get_default_engine() {
 }
 
 void Engine::queue_callback(std::function<void()> callback) {
+  TORCH_INTERNAL_ASSERT(false);
   TORCH_CHECK(
       current_graph_task,
       "Final callbacks can only be installed during backward pass.");
@@ -1356,6 +1447,7 @@ auto Engine::ready_queue(
     TORCH_INTERNAL_ASSERT(cpu_ready_queue);
     return cpu_ready_queue;
   } else {
+    TORCH_INTERNAL_ASSERT(false);
     TORCH_INTERNAL_ASSERT(
         0 <= device.index() &&
         device.index() <
@@ -1404,6 +1496,8 @@ auto Engine::start_device_threads() -> void {
   if (num_devices == 0) {
     return;
   }
+
+  TORCH_INTERNAL_ASSERT(false);
 
   // Since we're about to create threads, forking is not possible anymore
   track_bad_autograd_forks();

@@ -33,7 +33,14 @@ set(CMAKE_INSTALL_MESSAGE NEVER)
 # check and set CMAKE_CXX_STANDARD
 string(FIND "${CMAKE_CXX_FLAGS}" "-std=c++" env_cxx_standard)
 # RYAN: Added opencilk here
-string(APPEND CMAKE_CXX_FLAGS " -fopencilk")
+# string(REGEX REPLACE "(\-O[011123456789])" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+# string(REGEX REPLACE "(\-O[011123456789])" "" CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
+# set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O0")
+# string(APPEND CMAKE_CXX_FLAGS " -fopencilk -g -fsanitize=cilk -mllvm -cilksan-bc-path=/users/ryandeng/tmp/opencilk_compiler/lib/clang/14.0.6/lib/darwin/libcilksan_osx.bc")
+# string(APPEND CMAKE_SHARED_LINKER_FLAGS " -fsanitize=cilk")
+string(APPEND CMAKE_CXX_FLAGS " -fopencilk -g -fsanitize=cilk")
+string(APPEND CMAKE_SHARED_LINKER_FLAGS " -fsanitize=cilk")
+
 if(env_cxx_standard GREATER -1)
   message(
       WARNING "C++ standard version definition detected in environment variable."

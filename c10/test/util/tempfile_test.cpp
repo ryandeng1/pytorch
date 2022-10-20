@@ -10,6 +10,19 @@ TEST(TempFileTest, MatchesExpectedPattern) {
 }
 #endif // !defined(_WIN32)
 
+#ifdef __cilksan__
+#ifdef __cplusplus
+extern "C" {
+#endif
+void __csan_default_libhook(uint64_t call_id, uint64_t func_id, unsigned count);
+void __csan_rmdir(uint64_t call_id, uint64_t func_id, unsigned count) {
+  __csan_default_libhook(call_id, func_id, count);
+}
+#ifdef __cplusplus
+}
+#endif
+#endif
+
 static bool directory_exists(const char* path) {
   struct stat st;
   return (stat(path, &st) == 0 && (st.st_mode & S_IFDIR));

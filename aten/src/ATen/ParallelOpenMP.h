@@ -4,6 +4,8 @@
 #include <cstddef>
 #include <exception>
 #include <iostream>
+#include <csignal>
+#include <c10/core/GradMode.h>
 
 #ifdef _OPENMP
 #define INTRA_OP_PARALLEL
@@ -35,22 +37,6 @@ inline void invoke_parallel(
   std::exception_ptr eptr;
 
   /*
-  cilk_for(int64_t i = begin; i < end; i++) {
-      f(i, i + 1);
-  }
-  */
-  int64_t x = 0;
-
-  cilk_spawn [&](){
-    for (int i = begin; i < end; i++) {
-        x += std::rand();
-    }
-    return;
-    }();
-  ryan_for();
-  
-
-  /*
   int64_t num_threads = __cilkrts_get_nworkers();
   // sometimes (during testing?) grain size can be 0
   if (grain_size > 0) {
@@ -69,28 +55,32 @@ inline void invoke_parallel(
 
   int y = __cilkrts_get_worker_number();
 
-  for (int64_t i = begin; i < end; i += grain_size) {
+  bool tmp_grad_mode = GradMode::is_enabled();
+  int start = __cilkrts_get_worker_number();
+  // std::cout << "start for loop for cilk worker: " << __cilkrts_get_worker_number() << " grad mode: " << tmp_grad_mode << std::endl;
+  // std::cout << "start for loop for cilk worker: " << __cilkrts_get_worker_number() << " grad mode: " << tmp_grad_mode << std::endl;
+  std::stringstream msg;
+  msg << "start for loop for cilk worker: " << __cilkrts_get_worker_number() << " grad mode: " << tmp_grad_mode << "\n";
+  // std::cout << msg.str();
+
+
+  cilk_for (int64_t i = begin; i < end; i += grain_size) {
+      GradMode::set_enabled(tmp_grad_mode);
+      /*
+      if (start != __cilkrts_get_worker_number()) {
+        std::cout << "Grad mode: " << GradMode::is_enabled() << " what I thought? " << tmp_grad_mode << " for cilk worker: " << __cilkrts_get_worker_number() <<  " start: " << start << std::endl;
+      }
+      */
+      // TORCH_INTERNAL_ASSERT(GradMode::is_enabled() == tmp_grad_mode);
       f(i, std::min(end, i + grain_size));
   }
 
-  cilk_spawn [&](){
-    for (int i = begin; i < end; i++) {
-        x += std::rand();
-    }
-    return;
-    }();
-  cilk_spawn [&](){
-    for (int i = begin; i < end; i++) {
-        x += std::rand();
-    }
-    return;
-    }();
-  cilk_sync;
+  GradMode::set_enabled(tmp_grad_mode);
 
-  if (x == 3) {
-    std::cout << "X: " << x << std::endl;
-  }
-
+  std::stringstream msg2;
+  msg2 << "end for loop for cilk worker: " << __cilkrts_get_worker_number() << " grad mode: " << tmp_grad_mode << " start: " << start << "\n";
+  // std::cout << msg2.str();
+  // std::cout << "end for loop for cilk worker: " << __cilkrts_get_worker_number() << " grad mode: " << tmp_grad_mode << " start: " << start << std::endl;
   // Original code in OpenMP
 
 /*

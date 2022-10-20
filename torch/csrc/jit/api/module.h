@@ -15,6 +15,7 @@
 
 #include <ATen/core/function_schema.h>
 #include <ATen/core/qualified_name.h>
+#include <c10/core/GradMode.h>
 #include <c10/util/ArrayRef.h>
 #include <c10/util/Optional.h>
 #include <c10/util/irange.h>
@@ -111,6 +112,7 @@ struct TORCH_API Module : public Object {
   }
 
   IValue forward(std::vector<IValue> inputs, const Kwargs& kwargs = Kwargs()) {
+    c10::GradMode::set_enabled(1);
     return get_method("forward")(std::move(inputs), kwargs);
   }
 
