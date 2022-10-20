@@ -1,6 +1,8 @@
 #include <ATen/test/vec_test_all_types.h>
 #include <c10/util/irange.h>
+
 namespace {
+
 #if GTEST_HAS_TYPED_TEST
     template <typename T>
     class Memory : public ::testing::Test {};
@@ -99,6 +101,7 @@ namespace {
     TYPED_TEST_CASE(QuantizationTests, QuantTestedTypes);
     TYPED_TEST_CASE(FunctionalTests, RealFloatIntTestedTypes);
     TYPED_TEST_CASE(FunctionalBF16Tests, BFloatTestedTypes);
+    /*
     TYPED_TEST(Memory, UnAlignedLoadStore) {
         using vec = TypeParam;
         using VT = ValueType<TypeParam>;
@@ -1239,7 +1242,8 @@ namespace {
         test_ternary<vec>(
             NAME_INFO(relu6),
             RESOLVE_OVERLOAD(relu6),
-            [](/*const*/ vec& v0, const vec& v1, const vec& v2) {
+            // [](vec& v0, const vec& v1, const vec& v2) {
+            // [](//const vec& v0, const vec& v1, const vec& v2) {
                 return  v0.relu6(v1, v2);
             },
             test_case);
@@ -1418,6 +1422,7 @@ namespace {
          }
       }
     }
+    */
 
 #else
 #error GTEST does not have TYPED_TEST
