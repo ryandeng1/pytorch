@@ -159,6 +159,7 @@ struct TORCH_API Node : std::enable_shared_from_this<Node> {
     auto step_callbacks =
         at::getStepCallbacksUnlessEmpty(at::RecordScope::BACKWARD_FUNCTION);
     if (C10_UNLIKELY(step_callbacks.has_value())) {
+      TORCH_INTERNAL_ASSERT(false);
       at::RecordFunction guard(std::move(*step_callbacks));
       // Using sequence number and thread id to correlate with
       // the forward pass function
@@ -404,6 +405,8 @@ struct TORCH_API Node : std::enable_shared_from_this<Node> {
   /// check whether this edge is needed within the current graph task.
   bool task_should_compute_output(size_t output_edge_index) const {
     TORCH_CHECK(output_edge_index < num_outputs(), "Index out of range");
+    return should_compute_output(output_edge_index);
+    /*
     const auto& next = next_edges_[output_edge_index];
     if (next.is_valid()) {
       const auto exec_info = get_current_graph_task_exec_info();
@@ -416,6 +419,7 @@ struct TORCH_API Node : std::enable_shared_from_this<Node> {
       return true;
     }
     return false;
+    */
   }
 
   /// Returns true if any of the output edges in any of the ranges are active
