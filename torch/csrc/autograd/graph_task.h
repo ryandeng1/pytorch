@@ -2,12 +2,17 @@
 #include <ATen/ThreadLocalState.h>
 #include <ATen/core/Tensor.h>
 #include <c10/util/ThreadLocal.h>
+#include <c10/core/GradMode.h>
 #include <torch/csrc/autograd/input_buffer.h>
 #include <torch/csrc/autograd/utils/warnings.h>
 #include <vector>
 
 namespace torch {
 namespace autograd {
+
+static void ryan_grad_mode() {
+    std::cout << "RYAN GRAD MODE" << std::endl;
+}
 
 using edge_list = std::vector<Edge>;
 struct ReadyQueue;
@@ -85,7 +90,7 @@ struct GraphTask : std::enable_shared_from_this<GraphTask> {
 
   // Note: this field is not ready to be used until the proper
   // `thread_locals_.set_grad_mode()` call in the constructor.
-  at::ThreadLocalState thread_locals_ = at::ThreadLocalState();
+  // at::ThreadLocalState thread_locals_ = at::ThreadLocalState();
 
   std::unordered_set<c10::Stream> leaf_streams;
 
@@ -166,7 +171,17 @@ struct GraphTask : std::enable_shared_from_this<GraphTask> {
         cpu_ready_queue_(std::move(cpu_ready_queue)),
         future_result_(c10::make_intrusive<at::ivalue::Future>(
             c10::ListType::create(c10::TensorType::get()))) {
-    thread_locals_.set_grad_mode(grad_mode);
+    // ryan_grad_mode();
+    // thread_locals_.set_grad_mode(grad_mode);
+    TORCH_INTERNAL_ASSERT(!grad_mode);
+    /*
+    std::cout << "Grad mode in graph task: " << GradMode::is_enabled() << " " << grad_mode << " is what I thought. " << std::endl;
+    std::cout << "Autograd tls state: " << &(at::AutogradState::get_tls_state()) << " thread local state: " << &(thread_locals_.autograd_tls_) << " for cilk worker: " << __cilkrts_get_worker_number() << std::endl;
+    if (grad_mode) {
+        std::cout << "RYAN HUUH? " << std::endl;
+        ryan_grad_mode();
+    }
+    */
   }
 
  private:

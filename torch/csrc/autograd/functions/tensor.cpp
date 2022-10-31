@@ -13,9 +13,14 @@
 #include <memory>
 #include <stdexcept>
 #include <utility>
+#include <cilk/cilk_api.h>
 
 namespace torch {
 namespace autograd {
+
+static void ryan_copy() {
+    std::cout << "ryan copy apply by cilk worker: " << __cilkrts_get_worker_number() << std::endl;
+}
 
 auto CopyBackwards::apply(variable_list&& grads) -> variable_list {
   check_input_variables("CopyBackwards", grads, 1, -1, true);
@@ -61,6 +66,7 @@ CopySlices::CopySlices(
 }
 
 auto CopySlices::apply(variable_list&& inputs) -> variable_list {
+  // ryan_copy();
   check_input_variables("CopySlices", inputs, 1, -1, true);
   auto& grad = inputs[0];
   if (!grad.defined()) {
@@ -89,6 +95,7 @@ auto CopySlices::apply(variable_list&& inputs) -> variable_list {
   // Adding the missing nodes to the current graph's `exec_info`.
   // This is a workaround because the current `GraphTask::init_to_execute`
   // does not traverse into CopySlices node.
+  /*
   const auto exec_info = get_current_graph_task_exec_info();
   if (exec_info && !exec_info->empty()) {
     for (const auto& next : fn->next_edges()) {
@@ -97,6 +104,7 @@ auto CopySlices::apply(variable_list&& inputs) -> variable_list {
       }
     }
   }
+  */
 
   // TODO: We clone grad_slice because we modify it below and "fn" might save
   // it for the backward of res. We might be able to avoid the clone() if
