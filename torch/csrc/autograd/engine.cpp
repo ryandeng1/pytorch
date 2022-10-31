@@ -12,6 +12,7 @@
 #include <ATen/ExpandUtils.h>
 #include <ATen/Parallel.h>
 #include <ATen/detail/CUDAHooksInterface.h>
+#include <ATen/core/NamedTensor.h>
 
 #ifndef AT_PER_OPERATOR_HEADERS
 #include <ATen/Functions.h>
@@ -465,7 +466,13 @@ auto Engine::thread_main(const std::shared_ptr<GraphTask>& graph_task) -> void {
   // thread_main
   TORCH_INTERNAL_ASSERT(local_ready_queue != nullptr);
   int start_worker = __cilkrts_get_worker_number();
-  std::string name = "ryan";
+  c10::impl::PODLocalDispatchKeySet local_key_set;
+  local_key_set.included_ = 0;
+  local_key_set.excluded_ = 0;
+  // auto local_key_set = graph_task->thread_locals_.dispatch_key_;
+
+  // std::cout << "thread main Local key set included: " << local_key_set.included_ << std::endl;
+  // std::cout << "thread main Local key set excluded: " << local_key_set.excluded_ << std::endl;
   while (graph_task == nullptr || !graph_task->future_result_->completed()) {
     // local_graph_task represents the graph_task we retrieve from the queue.
     // The outer graph_task represents the overall graph_task we need to execute
@@ -480,10 +487,6 @@ auto Engine::thread_main(const std::shared_ptr<GraphTask>& graph_task) -> void {
       // NodeTask task = graph_task->cpu_ready_queue_->pop();
       NodeTask task = graph_task->cpu_ready_queue_->pop();
       // std::cout << "popped task: " << task.fn_->name() << " off of queue" << " by cilk worker: " << __cilkrts_get_worker_number() << " off of queue: " << graph_task->cpu_ready_queue_ << std::endl;
-      if (task.fn_->name().compare("torch::autograd::AccumulateGrad") != 0) {
-        name = task.fn_->name();
-      }
-    
 
       // This will only work if the worker is running a non backward task
       // TODO Needs to be fixed this to work in all cases
@@ -508,6 +511,8 @@ auto Engine::thread_main(const std::shared_ptr<GraphTask>& graph_task) -> void {
       }
 
       bool prev_grad_mode = GradMode::is_enabled();
+      auto prev_key_set = c10::impl::tls_local_dispatch_key_set();
+      bool prev_named_tensor_mode = at::NamesMode::is_enabled();
       TORCH_INTERNAL_ASSERT(prev_grad_mode);
       int start;
       if (task.fn_ && !local_graph_task->has_error_.load()) {
@@ -515,11 +520,10 @@ auto Engine::thread_main(const std::shared_ptr<GraphTask>& graph_task) -> void {
         // NB: The ThreadLocalStateGuard doesn't set the grad_mode because
         // GraphTask always saves ThreadLocalState without grad_mode.
         
-        // std::cout << "cilk worker: " << __cilkrts_get_worker_number() << " grad mode before: " << GradMode::is_enabled() << " for graph task: " << local_graph_task << std::endl;
         // at::ThreadLocalStateGuard tls_guard(local_graph_task->thread_locals_);
         GradMode::set_enabled(false);
-        // std::cout << "grad mode: " << GradMode::is_enabled() << " for cilk worker: " << __cilkrts_get_worker_number() << " working on graph task: " << local_graph_task << std::endl;
-        // std::cout << "cilk worker: " << __cilkrts_get_worker_number() << " grad mode after: " << GradMode::is_enabled() << " for graph task: " << local_graph_task << std::endl;
+        _force_tls_local_dispatch_key_set(local_key_set);
+        at::NamesMode::set_enabled(1);
         c10::Warning::WarningHandlerGuard warnings_guard(
             &local_graph_task->warning_handler_);
 
@@ -550,15 +554,15 @@ auto Engine::thread_main(const std::shared_ptr<GraphTask>& graph_task) -> void {
           thread_on_exception(local_graph_task, task.fn_, e);
         }
         start = __cilkrts_get_worker_number();
-        // std::cout << "grad mode after: " << GradMode::is_enabled() << " for cilk worker: " << __cilkrts_get_worker_number() << " working on graph task: " << local_graph_task << std::endl;
       } else {
           TORCH_INTERNAL_ASSERT(false);
       }
+      GradMode::set_enabled(true);
+      _force_tls_local_dispatch_key_set(prev_key_set);
+      at::NamesMode::set_enabled(prev_named_tensor_mode);
       if (start != __cilkrts_get_worker_number()) {
           TORCH_INTERNAL_ASSERT(false);
       }
-      TORCH_INTERNAL_ASSERT(prev_grad_mode);
-      GradMode::set_enabled(prev_grad_mode);
     }
       if (local_graph_task.get() != graph_task.get()) {
           std::cout << "RYAN BRUH HUH HERE MAN 2. " << __cilkrts_get_worker_number() << std::endl;
@@ -569,11 +573,9 @@ auto Engine::thread_main(const std::shared_ptr<GraphTask>& graph_task) -> void {
 
     // Decrement the outstanding tasks.
     --local_graph_task->outstanding_tasks_;
-    // std::cout << "graph task outstanding tasks: " << graph_task->outstanding_tasks_.load() << " queue size: " << graph_task->cpu_ready_queue_->size() << " for queue: " << graph_task->cpu_ready_queue_ << " for cilk worker: " << __cilkrts_get_worker_number() << std::endl;
  
     // Check if we've completed execution.
     if (local_graph_task->completed()) {
-      std::cout << "Last task name: " << name << " for cilk worker: " << __cilkrts_get_worker_number() << std::endl;
       local_graph_task->mark_as_completed_and_run_post_processing();
 
       auto base_owner = local_graph_task->owner_;
@@ -605,9 +607,9 @@ auto Engine::thread_main(const std::shared_ptr<GraphTask>& graph_task) -> void {
       }
     }
   }
-  std::cout << "Thread main completed" << " for cilk worker: " << __cilkrts_get_worker_number() << " and graph task queue: " << graph_task->cpu_ready_queue_ << " with size: " << graph_task->cpu_ready_queue_->size() << " and local ready queue: " << local_ready_queue << " and name: " << name << " num outstanding tasks: " << graph_task->outstanding_tasks_ << std::endl;
-  std::cout << "graph taks completed? " << graph_task->completed() << std::endl;
-  std::cout << "graph task future result completed? " << graph_task->future_result_->completed() << std::endl;
+  // std::cout << "Thread main completed" << " for cilk worker: " << __cilkrts_get_worker_number() << " and graph task queue: " << graph_task->cpu_ready_queue_ << " with size: " << graph_task->cpu_ready_queue_->size() << " and local ready queue: " << local_ready_queue << " and name: " << name << " num outstanding tasks: " << graph_task->outstanding_tasks_ << std::endl;
+  // std::cout << "graph taks completed? " << graph_task->completed() << std::endl;
+  // std::cout << "graph task future result completed? " << graph_task->future_result_->completed() << std::endl;
 }
 
 // Reentrant call will re-use the graph_task's owner thread ready_queue for
@@ -1238,7 +1240,7 @@ auto Engine::execute(
       /* depth */ not_reentrant_backward_call ? 0 : total_depth + 1,
       new_ready_queue);
       // /* cpu_ready_queue */ local_ready_queue);
-  std::cout << "Execute for cilk worker: " << __cilkrts_get_worker_number() << " queue: " << new_ready_queue << " and graph task: " << graph_task << " grad mode: " << GradMode::is_enabled() << std::endl;
+  // std::cout << "Execute for cilk worker: " << __cilkrts_get_worker_number() << " queue: " << new_ready_queue << " and graph task: " << graph_task << " grad mode: " << GradMode::is_enabled() << std::endl;
 
   // std::cout << "Graph task: " << graph_task << " for cilk worker: " << __cilkrts_get_worker_number() << " with queue: " << new_ready_queue << std::endl;
   // If we receive a single root, skip creating extra root node
@@ -1278,7 +1280,7 @@ auto Engine::execute(
   auto& fut = graph_task->future_result_;
   fut->wait();
   graph_task->warning_handler_.replay_warnings();
-  std::cout << "execute done for cilk worker: " << __cilkrts_get_worker_number() << std::endl;
+  // std::cout << "execute done for cilk worker: " << __cilkrts_get_worker_number() << std::endl;
   if (__cilkrts_get_worker_number() != start_worker) {
       // std::cout << "RYAN Cilk worker: " << start_worker << " started while cilk worker: " << __cilkrts_get_worker_number() << " finished. " << std::endl;
   }

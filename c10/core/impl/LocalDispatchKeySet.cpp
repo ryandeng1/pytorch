@@ -23,6 +23,7 @@ LocalDispatchKeySet tls_local_dispatch_key_set() {
 #endif // defined(_MSC_VER) || defined(C10_ANDROID) || defined(C10_IPHONE)
 
 void _force_tls_local_dispatch_key_set(LocalDispatchKeySet key_set) {
+  // TORCH_INTERNAL_ASSERT(false);
   raw_local_dispatch_key_set.set_included(key_set.included_);
   raw_local_dispatch_key_set.set_excluded(key_set.excluded_);
 }
@@ -49,28 +50,33 @@ void _force_tls_local_dispatch_key_set(LocalDispatchKeySet key_set) {
 // RAII API
 
 IncludeDispatchKeyGuard::IncludeDispatchKeyGuard(DispatchKeySet include)
-    : tls_(&raw_local_dispatch_key_set), include_(include - tls_->included()) {
+    : tls_(&raw_local_dispatch_key_set), include_(include - tls_->included()), copy_tls_(raw_local_dispatch_key_set) {
   if (!include_.empty()) {
-    tls_->set_included(tls_->included() | include_);
+    raw_local_dispatch_key_set.set_included(raw_local_dispatch_key_set.included() | include_);
+    // tls_->set_included(tls_->included() | include_);
   }
 }
 
 IncludeDispatchKeyGuard::~IncludeDispatchKeyGuard() {
   if (!include_.empty()) {
-    tls_->set_included(tls_->included() - include_);
+    raw_local_dispatch_key_set.set_included(copy_tls_.included() - include_);
+    // tls_->set_included(tls_->included() - include_);
   }
 }
 
 ExcludeDispatchKeyGuard::ExcludeDispatchKeyGuard(DispatchKeySet exclude)
-    : tls_(&raw_local_dispatch_key_set), exclude_(exclude - tls_->excluded()) {
+    : tls_(&raw_local_dispatch_key_set), exclude_(exclude - tls_->excluded()), copy_tls_(raw_local_dispatch_key_set) {
   if (!exclude_.empty()) {
-    tls_->set_excluded(tls_->excluded() | exclude_);
+    // tls_->set_excluded(tls_->excluded() | exclude_);
+    raw_local_dispatch_key_set.set_excluded(raw_local_dispatch_key_set.excluded() | exclude_);
   }
 }
 
 ExcludeDispatchKeyGuard::~ExcludeDispatchKeyGuard() {
   if (!exclude_.empty()) {
-    tls_->set_excluded(tls_->excluded() - exclude_);
+    raw_local_dispatch_key_set.set_excluded(copy_tls_.excluded() - exclude_);
+    // raw_local_dispatch_key_set.set_excluded(raw_local_dispatch_key_set.excluded() - exclude_);
+    // tls_->set_excluded(tls_->excluded() - exclude_);
   }
 }
 

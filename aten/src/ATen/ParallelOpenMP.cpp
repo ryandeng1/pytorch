@@ -61,10 +61,11 @@ void set_num_threads(int nthreads) {
   mkl_set_dynamic(false);
 #endif
 #ifdef USE_PTHREADPOOL
+  std::cout << "called thread pool" << std::endl;
   // because PyTorch uses caffe2::pthreadpool() in QNNPACK
-  caffe2::PThreadPool* const pool = caffe2::pthreadpool();
-  TORCH_INTERNAL_ASSERT(pool, "Invalid thread pool!");
-  pool->set_thread_count(nthreads);
+  // caffe2::PThreadPool* const pool = caffe2::pthreadpool();
+  // TORCH_INTERNAL_ASSERT(pool, "Invalid thread pool!");
+  // pool->set_thread_count(nthreads);
 #endif
 #if AT_MKLDNN_ENABLED()
   at::native::mkldnn::clear_computation_cache();

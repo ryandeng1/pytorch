@@ -16,6 +16,8 @@
 #include <ATen/FuncTorchTLS.h>
 #include <ATen/MemoryOverlap.h>
 #include <c10/util/Exception.h>
+#include <c10/core/GradMode.h>
+#include <cilk/cilk_api.h>
 
 #include <iostream>
 #include <list>
@@ -25,6 +27,8 @@
 #include <string>
 #include <typeinfo>
 #include <vector>
+
+static std::mutex ryan_mtx;
 
 namespace torch {
 namespace autograd {
@@ -145,10 +149,17 @@ static c10::impl::AutogradMetaFactoryRegisterer meta_factory_registerer(
 
 namespace impl {
 
+static void ryan_grad_mode_not_enabled() {
+    std::cout << "FUCK grad mode not enabled for materializing autograd meta???" << " for cilk worker: " << __cilkrts_get_worker_number() << std::endl;
+}
+
 AutogradMeta* materialize_autograd_meta(const at::TensorBase& self) {
   TORCH_CHECK(
       self.defined(),
       "cannot call materialize_autograd_meta() on undefined tensor");
+  // RYAN TODO: well this didn't work
+  // std::lock_guard<std::mutex> lock(ryan_mtx);
+  // std::cout << "materialize autograd meta for tensor: " << &self << " for cilk worker: " << __cilkrts_get_worker_number() << std::endl;
   auto p = self.unsafeGetTensorImpl();
   if (!p->autograd_meta()) {
     p->set_autograd_meta(std::make_unique<AutogradMeta>());
@@ -222,6 +233,7 @@ void rebase_history(const Variable& self, Edge gradient_edge) {
 }
 
 void create_cpp_hook(const at::TensorBase& self) {
+  std::cout << "CREATING HOOK???" << std::endl;
   auto& list = materialize_autograd_meta(self)->cpp_hooks_list_;
   // NOLINTNEXTLINE(modernize-make-shared)
   list.reset(new hooks_list());

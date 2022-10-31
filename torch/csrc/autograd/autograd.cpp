@@ -14,8 +14,27 @@
 
 #include <c10/util/irange.h>
 
+/*
+#ifdef __cilksan__
+#ifdef __cplusplus
+extern "C" {
+#endif
+void __csan_default_libhook(uint64_t call_id, uint64_t func_id, unsigned count);
+void __csan_free(uint64_t call_id, uint64_t func_id, unsigned count) {
+  __csan_default_libhook(call_id, func_id, count);
+}
+#ifdef __cplusplus
+}
+#endif
+#endif
+*/
+
 namespace torch {
 namespace autograd {
+
+static void ryan_error_grad() {
+    std::cout << "ryan error grad" << std::endl;
+}
 
 // NB: This code duplicates existing logic at torch/autograd/__init__.py and
 // torch._C._EngineBase.run_backward in torch/csrc/autograd/python_engine.cpp
@@ -88,12 +107,25 @@ variable_list run_backward(
     const variable_list& inputs,
     bool allow_unused,
     bool accumulate_grad) {
+  std::cout << "RUNNING BACKWARDS PASS" << std::endl;
   size_t num_tensors = outputs.size();
   edge_list roots;
   roots.reserve(num_tensors);
   for (const auto i : c10::irange(num_tensors)) {
     const Variable& output = outputs[i];
     auto gradient_edge = impl::gradient_edge(output);
+    /*
+    if (!gradient_edge.function) {
+        ryan_error_grad();
+        for (int i = 0; i < 10; i++) {
+            std::cout << "EXCEPTION on cilk worker: " << __cilkrts_get_worker_number() << " grad mode: " << GradMode::is_enabled() << std::endl;
+        }
+        std::cout << "Output size: " << output.sizes() << std::endl;
+        std::cout << "Output tensor: " << output << std::endl;
+    } else {
+        std::cout << "Gradient edge function: " << gradient_edge.function->name() << " for cilk worker: " << __cilkrts_get_worker_number() << std::endl;
+    }
+    */
     TORCH_CHECK(
         gradient_edge.function,
         "element ",
@@ -139,6 +171,11 @@ variable_list run_backward(
   if (!inputs.empty() && !allow_unused) {
     size_t num_inputs = inputs.size();
     for (const auto i : c10::irange(num_inputs)) {
+      if (!grad_inputs[i].defined()) {
+          for (int i = 0; i < 10; i++) {
+            std::cout << "EXCEPTION for cilk worker: " << __cilkrts_get_worker_number() << " for tensor: " << grad_inputs[i] << " sizes: " << grad_inputs[i].sizes() << " grad mode: " << GradMode::is_enabled() << std::endl;
+          }
+      }
       TORCH_CHECK(
           grad_inputs[i].defined(),
           "One of the "

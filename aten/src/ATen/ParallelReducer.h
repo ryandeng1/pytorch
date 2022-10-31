@@ -5,6 +5,7 @@
 #include <new>
 #include <functional>
 #include <cstdlib>
+#include <c10/util/Exception.h>
 
 #include <functional>
 #include <memory>
@@ -85,6 +86,7 @@ public:
       auto wrapped_reduce_func = Wrapper<1, void(void*, void*)>::wrap(reduce_func);
       scalar_t cilk_reducer(wrapped_ident_func, wrapped_reduce_func) res = ident;
 
+      // cilk_for (int64_t i = begin; i < end; i++) {
       cilk_for (int64_t i = begin; i < end; i++) {
           scalar_t tmp = f(i, i + 1, ident);
           scalar_t res_tmp = *&res;
@@ -98,5 +100,6 @@ public:
   scalar_t ident;
   const SF& sf;
   const F& f;
+  scalar_t grain_size_;
 };
 

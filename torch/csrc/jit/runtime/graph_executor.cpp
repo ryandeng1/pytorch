@@ -52,6 +52,8 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+#include <cilk/cilk_api.h>
+#include <c10/core/GradMode.h>
 
 namespace torch {
 namespace jit {
@@ -80,10 +82,12 @@ c10::AliasAnalysisKind aliasAnalysisInternalSpecialCase() {
 // size of the of the subgraph is too small to be profitable.
 thread_local bool autodiff_subgraph_inlining = true;
 void debugSetAutodiffSubgraphInlining(bool state) {
+  TORCH_INTERNAL_ASSERT(false);
   autodiff_subgraph_inlining = state;
 }
 
 bool getAutodiffSubgraphInlining() {
+  TORCH_CHECK(autodiff_subgraph_inlining);
   return autodiff_subgraph_inlining;
 }
 
@@ -100,6 +104,7 @@ bool getFusionGroupInlining() {
 
 thread_local std::weak_ptr<Graph> last_executed_optimized_graph;
 std::shared_ptr<Graph> lastExecutedOptimizedGraph() {
+  TORCH_INTERNAL_ASSERT(false);
   return last_executed_optimized_graph.lock();
 }
 namespace {
@@ -901,6 +906,7 @@ static bool mayIntroduceGradient(const Block* b) {
 }
 
 bool needsGradient(const std::shared_ptr<const Graph>& graph) {
+  TORCH_INTERNAL_ASSERT(autograd::GradMode::is_enabled() == c10::GradMode::is_enabled());
   if (!autograd::GradMode::is_enabled()) {
     return false;
   }

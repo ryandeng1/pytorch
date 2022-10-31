@@ -5,7 +5,9 @@
 #include <exception>
 #include <iostream>
 #include <csignal>
+#include <ATen/core/NamedTensor.h>
 #include <c10/core/GradMode.h>
+#include <c10/core/impl/LocalDispatchKeySet.h>
 
 #ifdef _OPENMP
 #define INTRA_OP_PARALLEL
@@ -53,35 +55,23 @@ inline void invoke_parallel(
       grain_size = 1;
   }
 
-  int y = __cilkrts_get_worker_number();
-
   bool tmp_grad_mode = GradMode::is_enabled();
+  auto tmp_key_set = c10::impl::tls_local_dispatch_key_set();
+  bool prev_names_mode = NamesMode::is_enabled();
+  std::stringstream msg_tls;
+  msg_tls << "grad mode: " << GradMode::is_enabled() << " for key set include: " << tmp_key_set.included_ << " for key set exclude: " << tmp_key_set.excluded_ << " for cilk worker: " << __cilkrts_get_worker_number() << std::endl;
+  // std::cout << msg_tls.str() << std::endl;
   int start = __cilkrts_get_worker_number();
-  // std::cout << "start for loop for cilk worker: " << __cilkrts_get_worker_number() << " grad mode: " << tmp_grad_mode << std::endl;
-  // std::cout << "start for loop for cilk worker: " << __cilkrts_get_worker_number() << " grad mode: " << tmp_grad_mode << std::endl;
-  std::stringstream msg;
-  msg << "start for loop for cilk worker: " << __cilkrts_get_worker_number() << " grad mode: " << tmp_grad_mode << "\n";
-  // std::cout << msg.str();
-
-
   cilk_for (int64_t i = begin; i < end; i += grain_size) {
       GradMode::set_enabled(tmp_grad_mode);
-      /*
-      if (start != __cilkrts_get_worker_number()) {
-        std::cout << "Grad mode: " << GradMode::is_enabled() << " what I thought? " << tmp_grad_mode << " for cilk worker: " << __cilkrts_get_worker_number() <<  " start: " << start << std::endl;
-      }
-      */
-      // TORCH_INTERNAL_ASSERT(GradMode::is_enabled() == tmp_grad_mode);
+      _force_tls_local_dispatch_key_set(tmp_key_set);
+      NamesMode::set_enabled(prev_names_mode);
       f(i, std::min(end, i + grain_size));
   }
 
   GradMode::set_enabled(tmp_grad_mode);
-
-  std::stringstream msg2;
-  msg2 << "end for loop for cilk worker: " << __cilkrts_get_worker_number() << " grad mode: " << tmp_grad_mode << " start: " << start << "\n";
-  // std::cout << msg2.str();
-  // std::cout << "end for loop for cilk worker: " << __cilkrts_get_worker_number() << " grad mode: " << tmp_grad_mode << " start: " << start << std::endl;
-  // Original code in OpenMP
+  _force_tls_local_dispatch_key_set(tmp_key_set);
+  NamesMode::set_enabled(prev_names_mode);
 
 /*
 #pragma omp parallel

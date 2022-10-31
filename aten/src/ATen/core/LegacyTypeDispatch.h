@@ -1,5 +1,7 @@
 #pragma once
 
+#include <iostream>
+
 // The legacy mechanism for dispatching operators in ATen is a Type
 // object, which is essentially a giant virtual dispatch table
 // for every operation we support dynamically dispatching over.
@@ -9,6 +11,10 @@
 // TODO: Clean up what remains here
 
 #include <c10/core/impl/LocalDispatchKeySet.h>
+
+static void ryan_dispatch() {
+    std::cout << "AutoDispatchBelowADInplaceOrView init: " << std::endl;
+}
 
 namespace at {
 
@@ -107,5 +113,9 @@ struct TORCH_API AutoDispatchBelowADInplaceOrView {
   }
   // disable Autograd & ADInplaceOrView dispatch keys
   c10::impl::ExcludeDispatchKeyGuard dispatch_key_guard_;
+
+  ~AutoDispatchBelowADInplaceOrView() {
+      // std::cout << "Destroying struct: " << this << std::endl;
+  }
 };
 } // namespace at

@@ -4,6 +4,10 @@
 #include <torch/csrc/jit/ir/ir.h>
 #include <torch/csrc/jit/runtime/graph_executor.h>
 #include <torch/csrc/utils/memory.h>
+#include <cilk/cilk_api.h>
+#include <c10/core/GradMode.h>
+
+
 
 namespace torch {
 namespace jit {
@@ -45,12 +49,14 @@ struct TORCH_API GraphFunction : public Function {
     auto& optimized_graph = optimized_graphs_[currentSpecialization()];
     if (optimized_graph) {
       return *optimized_graph;
-    }
+    } else {
     optimized_graph = graph_->copy();
     if (getGraphExecutorOptimize()) {
       preoptimizeGraph(*optimized_graph, force_no_amp_);
     }
+    // graph_->lint();
     return *optimized_graph;
+    }
   }
 
   const c10::QualifiedName& qualname() const override {
@@ -111,6 +117,7 @@ struct TORCH_API GraphFunction : public Function {
     check_single_output();
     const std::string& name = name_.name();
     std::shared_ptr<Graph> opt_graph = optimized_graph();
+    // opt_graph->lint();
     if (!executor_execution_mode_) {
       executor = GraphExecutor(opt_graph, name);
     } else {

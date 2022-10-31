@@ -15,6 +15,7 @@
 
 #include <ATen/core/function_schema.h>
 #include <ATen/core/qualified_name.h>
+#include <ATen/core/NamedTensor.h>
 #include <c10/core/GradMode.h>
 #include <c10/util/ArrayRef.h>
 #include <c10/util/Optional.h>
@@ -112,7 +113,15 @@ struct TORCH_API Module : public Object {
   }
 
   IValue forward(std::vector<IValue> inputs, const Kwargs& kwargs = Kwargs()) {
+    std::cout << "Beginning: " << "Named mode: " << at::NamesMode::is_enabled() << std::endl;
     c10::GradMode::set_enabled(1);
+    c10::impl::PODLocalDispatchKeySet s;
+    s.included_ = 0;
+    s.excluded_ = 0;
+    // Included: DispatchKeySet(BackendSelect, ADInplaceOrView)
+    // Excluded: DispatchKeySet(AutocastCPU, AutocastXPU, AutocastCUDA)
+    _force_tls_local_dispatch_key_set(s);
+    at::NamesMode::set_enabled(1);
     return get_method("forward")(std::move(inputs), kwargs);
   }
 

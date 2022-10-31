@@ -38,8 +38,9 @@ string(FIND "${CMAKE_CXX_FLAGS}" "-std=c++" env_cxx_standard)
 # set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O0")
 # string(APPEND CMAKE_CXX_FLAGS " -fopencilk -g -fsanitize=cilk -mllvm -cilksan-bc-path=/users/ryandeng/tmp/opencilk_compiler/lib/clang/14.0.6/lib/darwin/libcilksan_osx.bc")
 # string(APPEND CMAKE_SHARED_LINKER_FLAGS " -fsanitize=cilk")
-string(APPEND CMAKE_CXX_FLAGS " -fopencilk -g -fsanitize=cilk")
-string(APPEND CMAKE_SHARED_LINKER_FLAGS " -fsanitize=cilk")
+# string(APPEND CMAKE_CXX_FLAGS " -fopencilk -g -fsanitize=cilk")
+string(APPEND CMAKE_CXX_FLAGS " -fopencilk -g")
+# string(APPEND CMAKE_SHARED_LINKER_FLAGS " -fsanitize=cilk")
 
 if(env_cxx_standard GREATER -1)
   message(
@@ -196,6 +197,7 @@ option(USE_COLORIZE_OUTPUT "Colorize output during compilation" ON)
 option(USE_ASAN "Use Address Sanitizer" OFF)
 option(USE_TSAN "Use Thread Sanitizer" OFF)
 option(USE_CUDA "Use CUDA" ON)
+option(USE_CILKSAN "Use cilksan" OFF)
 # BUILD_SPLIT_CUDA must also be exported as an environment variable before building, with
 # `export BUILD_SPLIT_CUDA=1` because cpp_extension.py can only work properly if this variable
 # also exists in the environment.
@@ -945,6 +947,11 @@ endif()
 if(USE_ASAN)
     string(APPEND CMAKE_CXX_FLAGS_DEBUG " -fsanitize=address")
     string(APPEND CMAKE_LINKER_FLAGS_DEBUG " -fsanitize=address")
+endif()
+
+if(USE_CSAN)
+    string(APPEND CMAKE_CXX_FLAGS_DEBUG " -fsanitize=cilk -Og")
+    string(APPEND CMAKE_LINKER_FLAGS_DEBUG " -fsanitize=cilk")
 endif()
 
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")

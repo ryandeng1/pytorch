@@ -1,8 +1,13 @@
-#pragma once
 
+#pragma once
 #include <c10/core/DispatchKeySet.h>
 #include <c10/macros/Macros.h>
 #include <c10/util/Flags.h>
+#include <iostream>
+
+static void ryan_include_exclude() {
+    std::cout << "ryan include/exclude" << std::endl;
+}
 
 // TLS management for DispatchKeySet (the "local" DispatchKeySet(s))
 //
@@ -45,9 +50,13 @@ struct C10_API PODLocalDispatchKeySet {
   }
 
   void set_included(DispatchKeySet x) {
+    // std::cout << "include dispatch key: " << x << std::endl;
+    // ryan_include_exclude();
     included_ = (x ^ c10::default_included_set).raw_repr();
   }
   void set_excluded(DispatchKeySet x) {
+    // std::cout << "exclude dispatch key: " << x << std::endl;
+    // ryan_include_exclude();
     excluded_ = (x ^ c10::default_excluded_set).raw_repr();
   }
 };
@@ -97,6 +106,7 @@ class C10_API IncludeDispatchKeyGuard {
   // on destruction
   PODLocalDispatchKeySet* tls_;
   DispatchKeySet include_;
+  PODLocalDispatchKeySet copy_tls_;
 };
 
 class C10_API ExcludeDispatchKeyGuard {
@@ -115,12 +125,14 @@ class C10_API ExcludeDispatchKeyGuard {
   // on destruction
   PODLocalDispatchKeySet* tls_;
   DispatchKeySet exclude_;
+  PODLocalDispatchKeySet copy_tls_;
 };
 
 struct C10_API ForceDispatchKeyGuard {
  public:
   ForceDispatchKeyGuard(c10::impl::LocalDispatchKeySet key_set)
       : saved_keyset_(c10::impl::tls_local_dispatch_key_set()) {
+    TORCH_INTERNAL_ASSERT(false);
     c10::impl::_force_tls_local_dispatch_key_set(key_set);
   }
   ~ForceDispatchKeyGuard() {
