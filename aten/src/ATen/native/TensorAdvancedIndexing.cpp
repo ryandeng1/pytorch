@@ -75,6 +75,8 @@
 #include <numeric>
 #include <vector>
 
+#include <iostream>
+
 namespace at {
 namespace native {
 
@@ -2011,18 +2013,28 @@ Tensor& nonzero_out_cpu(const Tensor& self, Tensor& result) {
     .build();
 
   const auto numel = iter.numel();
-  const auto num_threads = at::get_num_threads();
+  // TODO: Ryan hack
+  // const auto num_threads = at::get_num_threads();
+  const auto num_threads = 1;
   DimVector thread_begin(num_threads, -1);
   DimVector thread_count_nonzero(num_threads + 1);
 
   // Pass 1: Count nonzero element per-thread
   AT_DISPATCH_ALL_TYPES_AND_COMPLEX_AND4(
       kComplexHalf, kHalf, kBFloat16, kBool, self.scalar_type(), "nonzero_count_cpu", [&] {
+    /*
     at::parallel_for(0, numel, internal::GRAIN_SIZE, [&] (int64_t begin, int64_t end) {
       const auto tid = at::get_thread_num();
       thread_begin[tid] = begin;
       thread_count_nonzero[tid + 1] = count_nonzero_impl<scalar_t>(iter, {begin, end});
     });
+    */
+    auto f = [&] (int64_t begin, int64_t end) {
+      const auto tid = 0;
+      thread_begin[tid] = begin;
+      thread_count_nonzero[tid + 1] = count_nonzero_impl<scalar_t>(iter, {begin, end});
+    };
+    f(0, numel);
   });
 
   // Convert thread-local counts to cumulative sum
@@ -2045,8 +2057,10 @@ Tensor& nonzero_out_cpu(const Tensor& self, Tensor& result) {
   // Pass 2: Write indexes
   AT_DISPATCH_ALL_TYPES_AND_COMPLEX_AND4(
       kComplexHalf, kHalf, kBFloat16, kBool, self.scalar_type(), "nonzero_cpu", [&] {
-    at::parallel_for(0, numel, internal::GRAIN_SIZE, [&] (int64_t begin, int64_t end) {
-      auto tid = at::get_thread_num();
+    // at::parallel_for(0, numel, internal::GRAIN_SIZE, [&] (int64_t begin, int64_t end) {
+    auto f = [&] (int64_t begin, int64_t end) {
+      // auto tid = at::get_thread_num();
+      auto tid = 0;
       // Work needs to be distributed the same on both passes
       TORCH_INTERNAL_ASSERT_DEBUG_ONLY(begin == thread_begin[tid]);
 
@@ -2103,8 +2117,20 @@ Tensor& nonzero_out_cpu(const Tensor& self, Tensor& result) {
         out_ptr = out;
       };
       iter.serial_for_each(loop, {begin, end});
+      if (out_ptr != out_accessor[thread_count_nonzero[tid + 1]].data()) {
+          std::stringstream msg_tls;
+          msg_tls << "Well something is not right for cilk worker: " << __cilkrts_get_worker_number() << std::endl;
+          // std::cout << "tid: " << tid << std::endl;
+          // std::cout << "Out: " << (void*)out_ptr << std::endl;
+          msg_tls << "Out: " << (void*)out_ptr << std::endl;
+          for (int i = 0; i < num_threads + 1; i++) {
+              std::cout << "Index: " << i << " thread count nonzero: " << thread_count_nonzero[tid + 1] << " data: " << (void*)(out_accessor[thread_count_nonzero[i]].data()) << std::endl;
+          }
+          std::cout << "Other one: " << (void*)(out_accessor[thread_count_nonzero[tid + 1]].data()) << std::endl;
+      }
       TORCH_INTERNAL_ASSERT(out_ptr == out_accessor[thread_count_nonzero[tid + 1]].data());
-    });
+    };
+    f(0, numel);
   });
   return result;
 }

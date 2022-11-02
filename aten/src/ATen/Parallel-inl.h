@@ -61,7 +61,7 @@ inline scalar_t parallel_reduce(
     return f(begin, end, ident);
   }
 
-  ParallelReducer<scalar_t, SF, F> reducer(ident, sf, f);
+  ParallelReducer<scalar_t, SF, F> reducer(ident, sf, f, grain_size);
   scalar_t final_result = reducer.reduce(begin, end);
 
   // Original code in torch

@@ -6,6 +6,9 @@
 #include <functional>
 #include <cstdlib>
 #include <c10/util/Exception.h>
+#include <ATen/core/NamedTensor.h>
+#include <c10/core/GradMode.h>
+#include <c10/core/impl/LocalDispatchKeySet.h>
 
 #include <functional>
 #include <memory>
@@ -77,22 +80,32 @@ template <class scalar_t, class SF, class F>
 class ParallelReducer
 {
 public:
-  ParallelReducer(scalar_t ident, const SF& sf, const F& f): ident(ident), sf(sf), f(f) {}
+  ParallelReducer(scalar_t ident, const SF& sf, const F& f, int64_t grain_size): ident(ident), sf(sf), f(f), grain_size_(grain_size) {}
 
   scalar_t reduce(int64_t begin, int64_t end) {
+      std::cout << "Parallel reduce" << std::endl;
       auto ident_func = std::bind(identity_<scalar_t>, ident, std::placeholders::_1);
       auto reduce_func = std::bind(reduce_<scalar_t, SF>, sf, std::placeholders::_1, std::placeholders::_2);
       auto wrapped_ident_func = Wrapper<0, void(void*)>::wrap(ident_func);
       auto wrapped_reduce_func = Wrapper<1, void(void*, void*)>::wrap(reduce_func);
       scalar_t cilk_reducer(wrapped_ident_func, wrapped_reduce_func) res = ident;
 
-      // cilk_for (int64_t i = begin; i < end; i++) {
-      cilk_for (int64_t i = begin; i < end; i++) {
-          scalar_t tmp = f(i, i + 1, ident);
+      bool tmp_grad_mode = at::GradMode::is_enabled();
+      auto tmp_key_set = c10::impl::tls_local_dispatch_key_set();
+      bool prev_names_mode = at::NamesMode::is_enabled();
+
+      cilk_for (int64_t i = begin; i < end; i += grain_size_) {
+          at::GradMode::set_enabled(tmp_grad_mode);
+          _force_tls_local_dispatch_key_set(tmp_key_set);
+          at::NamesMode::set_enabled(prev_names_mode);
+          scalar_t tmp = f(i, std::min(end, i + grain_size_), ident);
           scalar_t res_tmp = *&res;
           scalar_t res_tmp_2 = sf(res_tmp, tmp);
           *&res = res_tmp_2;
       }
+      at::GradMode::set_enabled(tmp_grad_mode);
+      _force_tls_local_dispatch_key_set(tmp_key_set);
+      at::NamesMode::set_enabled(prev_names_mode);
       return *&res;
   }
   
@@ -100,6 +113,6 @@ public:
   scalar_t ident;
   const SF& sf;
   const F& f;
-  scalar_t grain_size_;
+  int64_t grain_size_;
 };
 
