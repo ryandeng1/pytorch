@@ -2016,25 +2016,123 @@ Tensor& nonzero_out_cpu(const Tensor& self, Tensor& result) {
   // TODO: Ryan hack
   // const auto num_threads = at::get_num_threads();
   const auto num_threads = 1;
+
+  int num_iter = divup(numel, internal::GRAIN_SIZE);
+  // std::cout << "Num iter: " << num_iter << " for numel: " << numel << " and grain size: " << internal::GRAIN_SIZE << std::endl;
+
+  DimVector thread_begin2(num_iter, -1);
+  DimVector thread_count_nonzero2(num_iter + 1);
+  AT_DISPATCH_ALL_TYPES_AND_COMPLEX_AND4(
+      kComplexHalf, kHalf, kBFloat16, kBool, self.scalar_type(), "nonzero_count_cpu", [&] {
+    at::parallel_for(0, numel, internal::GRAIN_SIZE, [&] (int64_t begin, int64_t end) {
+      int64_t idx = (begin / internal::GRAIN_SIZE);
+      thread_begin2[idx] = begin;
+      thread_count_nonzero2[idx + 1] = count_nonzero_impl<scalar_t>(iter, {begin, end});
+      // std::cout << "Begin idx: " << idx << " thread count non zero: " << thread_count_nonzero2[idx] << std::endl;
+    });
+  });
+  
+  // Convert thread-local counts to cumulative sum
+  for (const auto i : c10::irange(1, thread_count_nonzero2.size())) {
+    thread_count_nonzero2[i] += thread_count_nonzero2[i - 1];
+  }
+
+  const auto self_sizes = self.sizes();
+  const auto total_nonzero = thread_count_nonzero2.back();
+  const int64_t ndim = self_sizes.size();
+  if (resize_output(result, {total_nonzero, ndim})) {
+    // Default to fortran-contiguous output (see gh-46224)
+    result.as_strided_({total_nonzero, ndim}, {1, total_nonzero});
+  }
+
+  if (result.numel() == 0) {
+    return result;
+  }
+
+  // Pass 2: Write indexes
+  AT_DISPATCH_ALL_TYPES_AND_COMPLEX_AND4(
+      kComplexHalf, kHalf, kBFloat16, kBool, self.scalar_type(), "nonzero_cpu", [&] {
+    at::parallel_for(0, numel, internal::GRAIN_SIZE, [&] (int64_t begin, int64_t end) {
+      // std::cout << "Second Begin: " << begin << " end: " << end << std::endl;
+      int64_t access_idx = begin / internal::GRAIN_SIZE;
+      // Work needs to be distributed the same on both passes
+      TORCH_INTERNAL_ASSERT(begin == thread_begin2[access_idx]);
+
+      // +1 faster than additional condition check inside loop
+      c10::SmallVector<int64_t, 33> sizes(ndim + 1, -1);
+      std::copy(self_sizes.begin(), self_sizes.end(), sizes.begin() + 1);
+      c10::SmallVector<int64_t, 33> current_idx(ndim + 1);
+      if (begin > 0) {
+        auto idx = begin;
+        for (int64_t k = ndim; idx > 0 && k > 0; --k) {
+          current_idx[k] = idx % sizes[k];
+          idx /= sizes[k];
+        }
+      }
+
+      auto out_accessor = result.accessor<int64_t, 2>();
+      auto out_ptr = out_accessor[thread_count_nonzero2[access_idx]].data();
+      int num_nonzero = 0;
+
+      auto loop = [&](char** data, const int64_t* strides, int64_t n1, int64_t n2) {
+        // Copy into local variables to improve compiler alias analysis
+        int64_t* C10_RESTRICT local_idx = current_idx.data() + 1;
+        const int64_t* C10_RESTRICT local_sizes = sizes.data() + 1;
+        const auto in_stride = strides[0];
+        const auto out_stride1 = out_accessor.stride(1);
+        const auto out_stride0 = out_accessor.stride(0) - ndim * out_stride1;
+        const auto ndim = out_accessor.size(1);
+        int64_t* out = out_ptr;
+
+        for (const auto i : c10::irange(n2)) {
+          const char* ptr = data[0] + i * strides[1];
+          for (const auto j : c10::irange(n1)) {
+            (void)j; //Suppress unused variable warning
+            const auto& val = c10::load<scalar_t>(ptr);
+            // If nonzero, write index
+            if (val != scalar_t(0)) {
+              for (const auto k : c10::irange(ndim)) {
+                *out = local_idx[k];
+                out += out_stride1;
+                num_nonzero++;
+              }
+              out += out_stride0;
+            }
+            ptr += in_stride;
+
+            // Advance current index
+            int64_t k = ndim - 1;
+            ++local_idx[k];
+            while (C10_UNLIKELY(local_idx[k] == local_sizes[k])) {
+              local_idx[k] = 0;
+              --k;
+              ++local_idx[k];
+            }
+          }
+        }
+        out_ptr = out;
+      };
+      iter.serial_for_each(loop, {begin, end});
+      TORCH_INTERNAL_ASSERT(out_ptr == out_accessor[thread_count_nonzero2[access_idx + 1]].data());
+    });
+  });
+
+
+
+
+
+  /*
   DimVector thread_begin(num_threads, -1);
   DimVector thread_count_nonzero(num_threads + 1);
 
   // Pass 1: Count nonzero element per-thread
   AT_DISPATCH_ALL_TYPES_AND_COMPLEX_AND4(
       kComplexHalf, kHalf, kBFloat16, kBool, self.scalar_type(), "nonzero_count_cpu", [&] {
-    /*
     at::parallel_for(0, numel, internal::GRAIN_SIZE, [&] (int64_t begin, int64_t end) {
       const auto tid = at::get_thread_num();
       thread_begin[tid] = begin;
       thread_count_nonzero[tid + 1] = count_nonzero_impl<scalar_t>(iter, {begin, end});
     });
-    */
-    auto f = [&] (int64_t begin, int64_t end) {
-      const auto tid = 0;
-      thread_begin[tid] = begin;
-      thread_count_nonzero[tid + 1] = count_nonzero_impl<scalar_t>(iter, {begin, end});
-    };
-    f(0, numel);
   });
 
   // Convert thread-local counts to cumulative sum
@@ -2132,6 +2230,7 @@ Tensor& nonzero_out_cpu(const Tensor& self, Tensor& result) {
     };
     f(0, numel);
   });
+  */
   return result;
 }
 
