@@ -763,7 +763,7 @@ void gemm_core_(
         */
         return;
     } 
-    if constexpr(double) {
+    if constexpr(is_double) {
         /*
         scalar_t* tmp_c = new scalar_t[ldc * n];
         for (const auto j : c10::irange(n)) {
