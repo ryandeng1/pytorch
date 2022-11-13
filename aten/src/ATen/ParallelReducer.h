@@ -83,7 +83,6 @@ public:
   ParallelReducer(scalar_t ident, const SF& sf, const F& f, int64_t grain_size): ident(ident), sf(sf), f(f), grain_size_(grain_size) {}
 
   scalar_t reduce(int64_t begin, int64_t end) {
-      std::cout << "Parallel reduce" << std::endl;
       auto ident_func = std::bind(identity_<scalar_t>, ident, std::placeholders::_1);
       auto reduce_func = std::bind(reduce_<scalar_t, SF>, sf, std::placeholders::_1, std::placeholders::_2);
       auto wrapped_ident_func = Wrapper<0, void(void*)>::wrap(ident_func);
