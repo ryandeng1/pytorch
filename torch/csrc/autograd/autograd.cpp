@@ -107,7 +107,6 @@ variable_list run_backward(
     const variable_list& inputs,
     bool allow_unused,
     bool accumulate_grad) {
-  std::cout << "RUNNING BACKWARDS PASS" << std::endl;
   size_t num_tensors = outputs.size();
   edge_list roots;
   roots.reserve(num_tensors);

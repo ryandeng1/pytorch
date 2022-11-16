@@ -113,7 +113,7 @@ struct TORCH_API Module : public Object {
   }
 
   IValue forward(std::vector<IValue> inputs, const Kwargs& kwargs = Kwargs()) {
-    std::cout << "Beginning: " << "Named mode: " << at::NamesMode::is_enabled() << std::endl;
+    // std::cout << "Beginning: " << "Named mode: " << at::NamesMode::is_enabled() << std::endl;
     c10::GradMode::set_enabled(1);
     c10::impl::PODLocalDispatchKeySet s;
     s.included_ = 0;

@@ -502,14 +502,6 @@ auto Engine::thread_main(const std::shared_ptr<GraphTask>& graph_task) -> void {
         continue;
       }
 
-
-      if (local_graph_task.get() != graph_task.get()) {
-          std::cout << "RYAN BRUH HUH HERE MAN. " << __cilkrts_get_worker_number() << std::endl;
-          std::cout << "Local graph task: " << local_graph_task << " Graph task: " << graph_task << std::endl;
-          std::cout << "Graph task cpu ready queue: " << graph_task->cpu_ready_queue_ << " local graph task cpu ready queue: " << local_graph_task->cpu_ready_queue_ << std::endl;
-          std::cout << "local ready queue: " << local_ready_queue << std::endl;
-      }
-
       bool prev_grad_mode = GradMode::is_enabled();
       auto prev_key_set = c10::impl::tls_local_dispatch_key_set();
       bool prev_named_tensor_mode = at::NamesMode::is_enabled();
@@ -560,16 +552,7 @@ auto Engine::thread_main(const std::shared_ptr<GraphTask>& graph_task) -> void {
       GradMode::set_enabled(true);
       _force_tls_local_dispatch_key_set(prev_key_set);
       at::NamesMode::set_enabled(prev_named_tensor_mode);
-      if (start != __cilkrts_get_worker_number()) {
-          TORCH_INTERNAL_ASSERT(false);
-      }
     }
-      if (local_graph_task.get() != graph_task.get()) {
-          std::cout << "RYAN BRUH HUH HERE MAN 2. " << __cilkrts_get_worker_number() << std::endl;
-          std::cout << "Local graph task: " << local_graph_task << " Graph task: " << graph_task << std::endl;
-          std::cout << "Graph task cpu ready queue: " << graph_task->cpu_ready_queue_ << " local graph task cpu ready queue: " << local_graph_task->cpu_ready_queue_ << std::endl;
-          std::cout << "local ready queue: " << local_ready_queue << std::endl;
-      }
 
     // Decrement the outstanding tasks.
     --local_graph_task->outstanding_tasks_;
@@ -593,23 +576,11 @@ auto Engine::thread_main(const std::shared_ptr<GraphTask>& graph_task) -> void {
         std::cout << "RYAN BRUH WHY: Worker device: " << worker_device << " base owner: " << base_owner << std::endl;
         // Synchronize outstanding_tasks_ with queue mutex
         std::atomic_thread_fence(std::memory_order_release);
-        std::cout << "Local ready queue for cilk worker BEFORE: " << __cilkrts_get_worker_number() << " is: " << local_ready_queue << std::endl;
         ready_queue_by_index(local_graph_task->cpu_ready_queue_, base_owner)
             ->push(NodeTask(local_graph_task, nullptr, InputBuffer(0)));
-        std::cout << "Local ready queue for cilk worker: " << __cilkrts_get_worker_number() << " is now: " << local_ready_queue << std::endl;
-      }
-      if (local_graph_task.get() != graph_task.get()) {
-          std::cout << "RYAN GRAPH TASKS DON'T MATCH UP" << std::endl;
-      }
-      if (!local_graph_task->completed()) {
-          std::cout << "RYAN ERROR ERROR OK THIS MIGHT BE GOOD" << std::endl;
-          std::cout << "Local graph task how many left? " << local_graph_task->outstanding_tasks_.load() << std::endl;
       }
     }
   }
-  // std::cout << "Thread main completed" << " for cilk worker: " << __cilkrts_get_worker_number() << " and graph task queue: " << graph_task->cpu_ready_queue_ << " with size: " << graph_task->cpu_ready_queue_->size() << " and local ready queue: " << local_ready_queue << " and name: " << name << " num outstanding tasks: " << graph_task->outstanding_tasks_ << std::endl;
-  // std::cout << "graph taks completed? " << graph_task->completed() << std::endl;
-  // std::cout << "graph task future result completed? " << graph_task->future_result_->completed() << std::endl;
 }
 
 // Reentrant call will re-use the graph_task's owner thread ready_queue for
@@ -834,10 +805,6 @@ void set_device(int device) {
   worker_device = device;
 }
 
-void ryan_undefined() {
-    std::cout << "RYAN Undefined grad" << std::endl;
-}
-
 void validate_outputs(
     const edge_list& edges,
     variable_list& grads,
@@ -856,12 +823,6 @@ void validate_outputs(
     const auto& metadata = edge.function->input_metadata(edge.input_nr);
     auto& grad = grads[i];
     if (!grad.defined()) {
-      std::cout << "Grad: " << grad << std::endl;
-      /*
-      std::cout << "RYAN HELLO SOME BULLSHIT" << std::endl;
-      std::cout << "Edge function name: " << edge.function->name() << std::endl;
-      ryan_undefined();
-      */
       // FIXME: TestJit.test_ge_optimized fails this assertion.
       // std::stringstream ss;
       // ss << "undefined gradient at index " << i;
@@ -971,7 +932,7 @@ static variable_list call_function(
     outputs = fn(std::move(inputs_copy));
   } else {
     outputs = fn(std::move(inputs));
-    auto fn_name = fn.name();
+    // auto fn_name = fn.name();
     /*
     // std::cout << "call function name: " << fn_name << " by cilk worker: " << __cilkrts_get_worker_number() << std::endl;
     if (fn_name.compare("torch::autograd::CopySlices") == 0) {
@@ -1036,7 +997,7 @@ void Engine::evaluate_function(
       }
     }
     if (!fn_info.needed_) {
-      std::cout << "not needed: " << func->name() << std::endl;
+      // std::cout << "not needed: " << func->name() << std::endl;
       // Skip execution if we don't need to execute the function.
       return;
     }
@@ -1279,7 +1240,7 @@ auto Engine::execute(
   // in dist_engine.cpp).
   auto& fut = graph_task->future_result_;
   fut->wait();
-  graph_task->warning_handler_.replay_warnings();
+  // graph_task->warning_handler_.replay_warnings();
   // std::cout << "execute done for cilk worker: " << __cilkrts_get_worker_number() << std::endl;
   if (__cilkrts_get_worker_number() != start_worker) {
       // std::cout << "RYAN Cilk worker: " << start_worker << " started while cilk worker: " << __cilkrts_get_worker_number() << " finished. " << std::endl;
