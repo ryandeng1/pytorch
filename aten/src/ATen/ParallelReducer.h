@@ -3,6 +3,7 @@
 #include <cilk/cilk.h>
 #include <cilk/cilk_api.h>
 #include <new>
+#include <cstddef>
 #include <functional>
 #include <cstdlib>
 #include <c10/util/Exception.h>
@@ -93,11 +94,21 @@ public:
       auto tmp_key_set = c10::impl::tls_local_dispatch_key_set();
       bool prev_names_mode = at::NamesMode::is_enabled();
 
-      cilk_for (int64_t i = begin; i < end; i += grain_size_) {
+      int64_t num_threads = __cilkrts_get_nworkers();
+      // sometimes (during testing?) grain size can be 0
+      if (grain_size_ > 0) {
+          num_threads = std::min(num_threads, at::divup((end - begin), grain_size_));
+      }
+
+      int64_t chunk_size = at::divup((end - begin), num_threads);
+
+      // cilk_for (int64_t i = begin; i < end; i += grain_size_) {
+      cilk_for (int64_t i = begin; i < end; i += chunk_size) {
           at::GradMode::set_enabled(tmp_grad_mode);
           _force_tls_local_dispatch_key_set(tmp_key_set);
           at::NamesMode::set_enabled(prev_names_mode);
-          scalar_t tmp = f(i, std::min(end, i + grain_size_), ident);
+          // scalar_t tmp = f(i, std::min(end, i + grain_size_), ident);
+          scalar_t tmp = f(i, std::min(end, i + chunk_size), ident);
           scalar_t res_tmp = *&res;
           scalar_t res_tmp_2 = sf(res_tmp, tmp);
           *&res = res_tmp_2;

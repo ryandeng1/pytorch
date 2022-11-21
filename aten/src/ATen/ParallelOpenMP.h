@@ -18,12 +18,6 @@
 #include <cstdlib>
 #endif
 
-static void ryan_for() {
-    if (std::rand() == 10) {
-        std::cout << "RYAN FOR LOOP" << std::endl;
-    }
-}
-
 namespace at {
 
 #ifdef _OPENMP
@@ -51,22 +45,29 @@ inline void invoke_parallel(
       f(i, std::min(end, i + chunk_size));
   }
   */
+  int64_t num_threads = __cilkrts_get_nworkers();
+  // sometimes (during testing?) grain size can be 0
+  if (grain_size > 0) {
+      num_threads = std::min(num_threads, divup((end - begin), grain_size));
+  }
+
+  int64_t chunk_size = divup((end - begin), num_threads);
+  /*
   if (grain_size == 0) {
       grain_size = 1;
   }
+  */
 
   bool tmp_grad_mode = GradMode::is_enabled();
   auto tmp_key_set = c10::impl::tls_local_dispatch_key_set();
   bool prev_names_mode = NamesMode::is_enabled();
-  std::stringstream msg_tls;
-  msg_tls << "grad mode: " << GradMode::is_enabled() << " for key set include: " << tmp_key_set.included_ << " for key set exclude: " << tmp_key_set.excluded_ << " for cilk worker: " << __cilkrts_get_worker_number() << std::endl;
-  // std::cout << msg_tls.str() << std::endl;
-  int start = __cilkrts_get_worker_number();
-  cilk_for (int64_t i = begin; i < end; i += grain_size) {
+  // cilk_for (int64_t i = begin; i < end; i += grain_size) {
+  cilk_for (int64_t i = begin; i < end; i += chunk_size) {
       GradMode::set_enabled(tmp_grad_mode);
       _force_tls_local_dispatch_key_set(tmp_key_set);
       NamesMode::set_enabled(prev_names_mode);
-      f(i, std::min(end, i + grain_size));
+      // f(i, std::min(end, i + grain_size));
+      f(i, std::min(end, i + chunk_size));
   }
 
   GradMode::set_enabled(tmp_grad_mode);
