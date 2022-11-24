@@ -45,7 +45,9 @@ struct TORCH_API GraphFunction : public Function {
   }
 
   std::shared_ptr<Graph> optimized_graph() const {
-    std::lock_guard<std::recursive_mutex> lock(compile_mutex);
+    // std::cout << "cilk worker: " << __cilkrts_get_worker_number() << std::endl;
+    // std::lock_guard<std::recursive_mutex> lock(compile_mutex);
+    std::lock_guard<std::mutex> lock(graph_mutex);
     auto& optimized_graph = optimized_graphs_[currentSpecialization()];
     if (optimized_graph) {
       return *optimized_graph;
@@ -54,7 +56,6 @@ struct TORCH_API GraphFunction : public Function {
     if (getGraphExecutorOptimize()) {
       preoptimizeGraph(*optimized_graph, force_no_amp_);
     }
-    // graph_->lint();
     return *optimized_graph;
     }
   }
@@ -109,7 +110,9 @@ struct TORCH_API GraphFunction : public Function {
 
   GraphExecutor& get_executor() {
     ensure_defined();
-    std::lock_guard<std::recursive_mutex> lock(compile_mutex);
+    // std::cout << "cilk worker: " << __cilkrts_get_worker_number() << std::endl;
+    // std::lock_guard<std::recursive_mutex> lock(compile_mutex);
+    std::lock_guard<std::mutex> lock(executor_mutex);
     auto& executor = executors_[currentSpecialization()];
     if (executor) {
       return *executor;
@@ -177,6 +180,8 @@ struct TORCH_API GraphFunction : public Function {
   // need to worry about causing a deadlock by calling one method from another
   // (e.g. optimized_graph() from get_executor()).
   mutable std::recursive_mutex compile_mutex;
+  mutable std::mutex executor_mutex;
+  mutable std::mutex graph_mutex;
 
   // executor_[0] - autocast off
   // executor_[1] - autocast cpu on
